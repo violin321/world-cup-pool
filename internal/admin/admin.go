@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -103,7 +106,59 @@ func matchDTO(m *core.Record, teams map[string]string) map[string]any {
 	}
 }
 
+func appMetaRecord(app core.App, key string) (*core.Record, error) {
+	rec, err := app.FindFirstRecordByFilter("app_meta", "key = {:key}", map[string]any{"key": key})
+	if err == nil {
+		return rec, nil
+	}
+	col, err := app.FindCollectionByNameOrId("app_meta")
+	if err != nil {
+		return nil, err
+	}
+	rec = core.NewRecord(col)
+	rec.Set("key", key)
+	return rec, nil
+}
+
+func defaultLanguage(app core.App) string {
+	rec, err := app.FindFirstRecordByFilter("app_meta", "key = {:key}", map[string]any{"key": "default_language"})
+	if err != nil {
+		return "en"
+	}
+	var value string
+	if err := rec.UnmarshalJSONField("value", &value); err != nil || value == "" {
+		value = strings.Trim(strings.TrimSpace(fmt.Sprint(rec.Get("value"))), "\"")
+	}
+	if isLanguage(value) {
+		return value
+	}
+	return "en"
+}
+
+func isLanguage(v string) bool {
+	switch v {
+	case "en", "zh-CN", "nb", "nn":
+		return true
+	default:
+		return false
+	}
+}
+
+func randomPassword() (string, error) {
+	b := make([]byte, 18)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "Wcp-" + base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func envSet(name string) bool { return strings.TrimSpace(os.Getenv(name)) != "" }
+
 func Register(app core.App, se *core.ServeEvent) {
+	se.Router.GET("/api/app-settings", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, map[string]any{"defaultLanguage": defaultLanguage(app)})
+	})
+
 	admin := se.Router.Group("/api/admin")
 	admin.Bind(apis.RequireSuperuserAuth())
 
@@ -236,11 +291,120 @@ func Register(app core.App, se *core.ServeEvent) {
 		for _, user := range users {
 			tipCount, _ := app.CountRecords("tips", dbx.HashExp{"user": user.Id})
 			leagueCount, _ := app.CountRecords("league_members", dbx.HashExp{"user": user.Id})
+			ownedCount, _ := app.CountRecords("leagues", dbx.HashExp{"owner": user.Id})
+			messageCount, _ := app.CountRecords("league_messages", dbx.HashExp{"user": user.Id})
 			name := strings.TrimSpace(user.GetString("name"))
-			if name == "" { name = user.GetString("email") }
-			out = append(out, map[string]any{"id": user.Id, "name": name, "email": user.GetString("email"), "tips": tipCount, "leagues": leagueCount, "created": dateString(user, "created")})
+			if name == "" {
+				name = user.GetString("email")
+			}
+			out = append(out, map[string]any{"id": user.Id, "name": name, "email": user.GetString("email"), "tips": tipCount, "leagues": leagueCount, "ownedLeagues": ownedCount, "messages": messageCount, "created": dateString(user, "created")})
 		}
 		return e.JSON(http.StatusOK, map[string]any{"items": out})
+	})
+
+	admin.POST("/users/{id}/reset-password", func(e *core.RequestEvent) error {
+		id := e.Request.PathValue("id")
+		user, err := app.FindRecordById("users", id)
+		if err != nil {
+			return bad(e, http.StatusNotFound, "user not found")
+		}
+		var body struct {
+			Password string `json:"password"`
+			Generate bool   `json:"generate"`
+			Confirm  string `json:"confirm"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return bad(e, http.StatusBadRequest, "invalid body")
+		}
+		if body.Confirm != "RESET" {
+			return bad(e, http.StatusBadRequest, "confirmation required")
+		}
+		temp := strings.TrimSpace(body.Password)
+		if body.Generate || temp == "" {
+			temp, err = randomPassword()
+			if err != nil {
+				return bad(e, http.StatusInternalServerError, err.Error())
+			}
+		}
+		if len(temp) < 10 {
+			return bad(e, http.StatusBadRequest, "password must be at least 10 characters")
+		}
+		user.SetPassword(temp)
+		if err := app.Save(user); err != nil {
+			return bad(e, http.StatusInternalServerError, err.Error())
+		}
+		log.Printf("[admin] user password reset by superuser=%s user=%s email=%s", e.Auth.Id, user.Id, user.GetString("email"))
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "temporaryPassword": temp})
+	})
+
+	admin.DELETE("/users/{id}", func(e *core.RequestEvent) error {
+		id := e.Request.PathValue("id")
+		user, err := app.FindRecordById("users", id)
+		if err != nil {
+			return bad(e, http.StatusNotFound, "user not found")
+		}
+		var body struct {
+			Confirm string `json:"confirm"`
+		}
+		_ = e.BindBody(&body)
+		if body.Confirm != "DELETE" {
+			return bad(e, http.StatusBadRequest, "confirmation required")
+		}
+		tipCount, _ := app.CountRecords("tips", dbx.HashExp{"user": user.Id})
+		leagueCount, _ := app.CountRecords("league_members", dbx.HashExp{"user": user.Id})
+		ownedCount, _ := app.CountRecords("leagues", dbx.HashExp{"owner": user.Id})
+		messageCount, _ := app.CountRecords("league_messages", dbx.HashExp{"user": user.Id})
+		if err := app.Delete(user); err != nil {
+			return bad(e, http.StatusInternalServerError, err.Error())
+		}
+		if err := scoring.Recompute(app); err != nil {
+			log.Printf("[admin] recompute after user delete: %v", err)
+		}
+		log.Printf("[admin] user deleted by superuser=%s user=%s email=%s tips=%d memberships=%d ownedLeagues=%d messages=%d", e.Auth.Id, id, user.GetString("email"), tipCount, leagueCount, ownedCount, messageCount)
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "deleted": id, "impact": map[string]int64{"tips": tipCount, "leagueMemberships": leagueCount, "ownedLeagues": ownedCount, "messages": messageCount}})
+	})
+
+	admin.GET("/settings", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, map[string]any{
+			"defaultLanguage": defaultLanguage(app),
+			"languages": []map[string]string{
+				{"code": "en", "label": "English"},
+				{"code": "zh-CN", "label": "简体中文"},
+				{"code": "nb", "label": "Bokmål"},
+				{"code": "nn", "label": "Nynorsk"},
+			},
+			"mail": map[string]any{
+				"applicationUrlConfigured":   envSet("PUBLIC_BASE_URL") || envSet("APP_URL") || envSet("PB_PUBLIC_URL"),
+				"signupAlertEmailConfigured": envSet("SIGNUP_ALERT_EMAIL"),
+				"notifyCronEnabled":          strings.EqualFold(strings.TrimSpace(os.Getenv("NOTIFY_CRON_ENABLED")), "true"),
+				"vapidPublicKeyConfigured":   envSet("VAPID_PUBLIC_KEY"),
+				"vapidPrivateKeyConfigured":  envSet("VAPID_PRIVATE_KEY"),
+				"smtpEnvConfigured":          envSet("SMTP_HOST") || envSet("SMTP_USERNAME") || envSet("SMTP_USER"),
+				"pocketBaseSettingsUrl":      "/_/#/settings/mail",
+			},
+		})
+	})
+
+	admin.POST("/settings/default-language", func(e *core.RequestEvent) error {
+		var body struct {
+			Language string `json:"language"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return bad(e, http.StatusBadRequest, "invalid body")
+		}
+		if !isLanguage(body.Language) {
+			return bad(e, http.StatusBadRequest, "unsupported language")
+		}
+		rec, err := appMetaRecord(app, "default_language")
+		if err != nil {
+			return bad(e, http.StatusInternalServerError, err.Error())
+		}
+		rec.Set("value", body.Language)
+		if err := app.Save(rec); err != nil {
+			return bad(e, http.StatusInternalServerError, err.Error())
+		}
+		log.Printf("[admin] default language changed by superuser=%s language=%s", e.Auth.Id, body.Language)
+		return e.JSON(http.StatusOK, map[string]any{"ok": true, "defaultLanguage": body.Language})
 	})
 
 	admin.GET("/leagues", func(e *core.RequestEvent) error {

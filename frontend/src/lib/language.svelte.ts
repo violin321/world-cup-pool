@@ -8,6 +8,8 @@ const STORAGE_KEY = 'language';
 const DEFAULT_LANGUAGE: LanguageCode = 'en';
 const LANGUAGE_ORDER: LanguageCode[] = ['en', 'zh-CN', 'nb', 'nn'];
 
+let remoteDefault: LanguageCode | null = null;
+
 export function isLanguageCode(value: unknown): value is LanguageCode {
 	return value === 'nb' || value === 'nn' || value === 'en' || value === 'zh-CN';
 }
@@ -18,24 +20,26 @@ function readAuthLanguage(): LanguageCode | null {
 }
 
 function readStoredLanguage(): LanguageCode {
-	if (!browser) return DEFAULT_LANGUAGE;
+	if (!browser) return remoteDefault ?? DEFAULT_LANGUAGE;
 	const authLanguage = readAuthLanguage();
 	if (authLanguage) return authLanguage;
 	const stored = localStorage.getItem(STORAGE_KEY);
-	return isLanguageCode(stored) ? stored : DEFAULT_LANGUAGE;
+	return isLanguageCode(stored) ? stored : remoteDefault ?? DEFAULT_LANGUAGE;
 }
 
 class LanguageStore {
 	code = $state<LanguageCode>(readStoredLanguage());
 	private persisting = false;
+	private hasStoredPreference = browser && localStorage.getItem(STORAGE_KEY) !== null;
 
 	constructor() {
 		pb.authStore.onChange(() => {
 			void this.syncFromAuth();
 		});
 		if (browser) {
-			localStorage.setItem(STORAGE_KEY, this.code);
+			if (this.hasStoredPreference) localStorage.setItem(STORAGE_KEY, this.code);
 			queueMicrotask(() => {
+				void this.syncDefault();
 				void this.syncFromAuth();
 			});
 		}
@@ -86,6 +90,22 @@ class LanguageStore {
 		}
 		if (!pb.authStore.isValid || !pb.authStore.record) return;
 		await this.persist(this.code);
+	}
+
+	private async syncDefault() {
+		if (!browser) return;
+		try {
+			const res = await pb.send<{ defaultLanguage?: unknown }>('/api/app-settings', { method: 'GET' });
+			if (!isLanguageCode(res.defaultLanguage)) return;
+			remoteDefault = res.defaultLanguage;
+			if (!this.hasStoredPreference && !readAuthLanguage()) {
+				this.code = res.defaultLanguage;
+				this.hasStoredPreference = true;
+				localStorage.setItem(STORAGE_KEY, res.defaultLanguage);
+			}
+		} catch {
+			// Keep bundled default if public settings cannot be loaded.
+		}
 	}
 
 	private async persist(next: LanguageCode) {

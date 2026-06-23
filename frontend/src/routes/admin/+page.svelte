@@ -5,21 +5,24 @@
 	type Summary = { users: number; leagues: number; tips: number; matches: { total: number; scheduled: number; live: number; finished: number } };
 	type Match = { id: string; extId: string; stage: string; num: number; groupLetter: string; roundLabel: string; kickoff: string; status: string; homeTeam: string; awayTeam: string; ftHome: number; ftAway: number; etHome: number; etAway: number; penHome: number; penAway: number; finalizedAt: string };
 	type Tip = { id: string; userName: string; userEmail: string; match: Match; ftHome: number; ftAway: number; etHome: number; etAway: number; updated: string };
-	type UserRow = { id: string; name: string; email: string; tips: number; leagues: number; created: string };
+	type UserRow = { id: string; name: string; email: string; tips: number; leagues: number; ownedLeagues: number; messages: number; created: string };
 	type LeagueRow = { id: string; name: string; inviteCode: string; ownerName: string; members: number; created: string };
+	type AdminSettings = { defaultLanguage: string; languages: { code: string; label: string }[]; mail: Record<string, boolean | string> };
 
 	let checking = $state(true);
 	let isAdmin = $state(false);
 	let error = $state('');
 	let email = $state('');
 	let password = $state('');
-	let tab = $state<'overview' | 'matches' | 'tips' | 'users'>('overview');
+	let tab = $state<'overview' | 'matches' | 'tips' | 'users' | 'settings'>('overview');
 	let busy = $state(false);
 	let summary = $state<Summary | null>(null);
 	let matches = $state<Match[]>([]);
 	let tips = $state<Tip[]>([]);
 	let users = $state<UserRow[]>([]);
 	let leagues = $state<LeagueRow[]>([]);
+	let settings = $state<AdminSettings | null>(null);
+	let temporaryPassword = $state('');
 	let matchQuery = $state('');
 	let tipUserQuery = $state('');
 	let tipMatchQuery = $state('');
@@ -54,13 +57,23 @@
 	async function loginSuperuser() {
 		busy = true; error = '';
 		try {
-			await pb.collection('_superusers').authWithPassword(email.trim(), password);
+			// _superusers is a system collection — SDK schema doesn't include it,
+			// so pb.collection('_superusers').authWithPassword() silently fails.
+			// Use raw fetch and save token manually.
+			const resp = await fetch('/api/collections/_superusers/auth-with-password', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ identity: email.trim(), password })
+			});
+			if (!resp.ok) throw new Error(String(resp.status));
+			const data = await resp.json();
+			pb.authStore.save(data.token, data.record);
 			await verify();
 		} catch (err) { error = '登录失败：请使用 PocketBase superuser 邮箱和密码。'; }
 		finally { busy = false; }
 	}
 	function logout() { pb.authStore.clear(); isAdmin = false; summary = null; }
-	async function loadAll() { await Promise.all([loadSummary(), loadMatches(), loadTips(), loadUsers(), loadLeagues()]); }
+	async function loadAll() { await Promise.all([loadSummary(), loadMatches(), loadTips(), loadUsers(), loadLeagues(), loadSettings()]); }
 	async function loadSummary() { summary = await api('/api/admin/summary'); }
 	async function loadMatches() { matches = (await api<{ items: Match[] }>('/api/admin/matches')).items; }
 	async function loadTips() {
@@ -71,6 +84,7 @@
 	}
 	async function loadUsers() { users = (await api<{ items: UserRow[] }>('/api/admin/users')).items; }
 	async function loadLeagues() { leagues = (await api<{ items: LeagueRow[] }>('/api/admin/leagues')).items; }
+	async function loadSettings() { settings = await api<AdminSettings>('/api/admin/settings'); }
 	async function saveResult(m: Match) {
 		const msg = `确认覆盖赛果？\n${m.homeTeam} vs ${m.awayTeam}\n新比分：${m.ftHome}-${m.ftAway}\n状态：${statusLabels[m.status] ?? m.status}`;
 		if (!confirm(msg)) return;
@@ -88,6 +102,33 @@
 		catch (err) { error = '重新计算失败。'; }
 		finally { busy = false; }
 	}
+	async function resetUserPassword(u: UserRow) {
+		const ok = prompt(`高风险操作：将为用户生成临时密码，并只显示一次。\n用户：${u.name} <${u.email}>\n请输入 RESET 确认。`);
+		if (ok !== 'RESET') return;
+		busy = true; error = ''; temporaryPassword = '';
+		try {
+			const result = await api<{ temporaryPassword: string }>(`/api/admin/users/${u.id}/reset-password`, 'POST', { generate: true, confirm: 'RESET' });
+			temporaryPassword = result.temporaryPassword;
+		}
+		catch (err) { error = '重置密码失败。'; }
+		finally { busy = false; }
+	}
+	async function deleteUser(u: UserRow) {
+		const impact = `关联影响：预测 ${u.tips}，联赛成员关系 ${u.leagues}，拥有联赛 ${u.ownedLeagues}，聊天消息 ${u.messages}。PocketBase 关系字段会按 schema 级联删除相关记录，随后重算积分。`;
+		const ok = prompt(`高风险操作：永久删除用户。\n用户：${u.name} <${u.email}>\n${impact}\n请输入 DELETE 确认。`);
+		if (ok !== 'DELETE') return;
+		busy = true; error = '';
+		try { await api(`/api/admin/users/${u.id}`, 'DELETE', { confirm: 'DELETE' }); await Promise.all([loadUsers(), loadLeagues(), loadSummary()]); }
+		catch (err) { error = '删除用户失败。'; }
+		finally { busy = false; }
+	}
+	async function saveDefaultLanguage(code: string) {
+		busy = true; error = '';
+		try { settings = await api<AdminSettings>('/api/admin/settings/default-language', 'POST', { language: code }); await loadSettings(); }
+		catch (err) { error = '保存默认语言失败。'; }
+		finally { busy = false; }
+	}
+
 	async function deleteTip(t: Tip) {
 		const ok = prompt(`高风险操作：将清空该预测。\n用户：${t.userName}\n比赛：${t.match.homeTeam} vs ${t.match.awayTeam}\n请输入“删除”确认。`);
 		if (ok !== '删除') return;
@@ -132,6 +173,7 @@
 			<button class:active={tab === 'matches'} onclick={() => (tab = 'matches')}>比赛结果</button>
 			<button class:active={tab === 'tips'} onclick={() => (tab = 'tips')}>用户预测</button>
 			<button class:active={tab === 'users'} onclick={() => (tab = 'users')}>用户与联赛</button>
+			<button class:active={tab === 'settings'} onclick={() => (tab = 'settings')}>系统设置</button>
 		</nav>
 
 		{#if tab === 'overview'}
@@ -146,12 +188,14 @@
 			<section class="card"><div class="toolbar"><h2>比赛结果</h2><input placeholder="搜索球队/阶段/状态" bind:value={matchQuery} /><button onclick={loadMatches}>刷新</button></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>阶段</th><th>比赛</th><th>状态</th><th>90 分钟</th><th>加时</th><th>点球</th><th>操作</th></tr></thead><tbody>{#each filteredMatches as m (m.id)}<tr><td>{fmtDate(m.kickoff)}</td><td>{stageLabels[m.stage] ?? m.stage}</td><td><strong>{m.homeTeam}</strong> vs <strong>{m.awayTeam}</strong></td><td><select bind:value={m.status}><option value="scheduled">未开始</option><option value="live">进行中</option><option value="finished">已结束</option><option value="postponed">延期</option><option value="cancelled">取消</option></select></td><td><input class="score" type="number" min="0" max="99" bind:value={m.ftHome} /> - <input class="score" type="number" min="0" max="99" bind:value={m.ftAway} /></td><td><input class="score" type="number" min="0" max="99" bind:value={m.etHome} /> - <input class="score" type="number" min="0" max="99" bind:value={m.etAway} /></td><td><input class="score" type="number" min="0" max="99" bind:value={m.penHome} /> - <input class="score" type="number" min="0" max="99" bind:value={m.penAway} /></td><td><button disabled={busy} onclick={() => saveResult(m)}>保存</button></td></tr>{/each}</tbody></table></div></section>
 		{:else if tab === 'tips'}
 			<section class="card"><div class="toolbar"><h2>用户预测</h2><input placeholder="按用户名/邮箱" bind:value={tipUserQuery} /><input placeholder="按球队/比赛" bind:value={tipMatchQuery} /><button onclick={loadTips}>搜索</button></div><div class="table-wrap"><table><thead><tr><th>用户</th><th>比赛</th><th>预测</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{#each tips as t (t.id)}<tr><td><strong>{t.userName}</strong><br /><small>{t.userEmail}</small></td><td>{fmtDate(t.match.kickoff)}<br />{t.match.homeTeam} vs {t.match.awayTeam}</td><td>{t.ftHome} - {t.ftAway}</td><td>{fmtDate(t.updated)}</td><td><button class="danger" disabled={busy} onclick={() => deleteTip(t)}>清空预测</button></td></tr>{/each}</tbody></table></div></section>
-		{:else}
-			<section class="split"><div class="card"><h2>用户</h2><div class="table-wrap"><table><thead><tr><th>姓名</th><th>邮箱</th><th>预测</th><th>联赛</th></tr></thead><tbody>{#each users as u (u.id)}<tr><td>{u.name}</td><td>{u.email}</td><td>{u.tips}</td><td>{u.leagues}</td></tr>{/each}</tbody></table></div></div><div class="card"><h2>联赛</h2><div class="table-wrap"><table><thead><tr><th>名称</th><th>邀请码</th><th>所有者</th><th>成员</th></tr></thead><tbody>{#each leagues as l (l.id)}<tr><td>{l.name}</td><td>{l.inviteCode}</td><td>{l.ownerName}</td><td>{l.members}</td></tr>{/each}</tbody></table></div></div></section>
+		{:else if tab === 'users'}
+			<section class="split"><div class="card"><h2>用户</h2>{#if temporaryPassword}<p class="success">临时密码（只显示一次，请立即复制）：<code>{temporaryPassword}</code></p>{/if}<div class="table-wrap"><table><thead><tr><th>姓名</th><th>邮箱</th><th>预测</th><th>联赛</th><th>拥有</th><th>聊天</th><th>操作</th></tr></thead><tbody>{#each users as u (u.id)}<tr><td>{u.name}</td><td>{u.email}</td><td>{u.tips}</td><td>{u.leagues}</td><td>{u.ownedLeagues}</td><td>{u.messages}</td><td><button disabled={busy} onclick={() => resetUserPassword(u)}>重置密码</button> <button class="danger" disabled={busy} onclick={() => deleteUser(u)}>删除用户</button></td></tr>{/each}</tbody></table></div></div><div class="card"><h2>联赛</h2><div class="table-wrap"><table><thead><tr><th>名称</th><th>邀请码</th><th>所有者</th><th>成员</th></tr></thead><tbody>{#each leagues as l (l.id)}<tr><td>{l.name}</td><td>{l.inviteCode}</td><td>{l.ownerName}</td><td>{l.members}</td></tr>{/each}</tbody></table></div></div></section>
+		{:else if tab === 'settings'}
+			<section class="split"><div class="card"><h2>系统默认语言</h2><p class="muted">用于新访客/未选择语言用户的默认显示语言；已登录用户自己的 language 字段优先。</p>{#if settings}<label>默认语言 <select value={settings.defaultLanguage} onchange={(e) => saveDefaultLanguage(e.currentTarget.value)}>{#each settings.languages as lang}<option value={lang.code}>{lang.label}</option>{/each}</select></label>{/if}</div><div class="card"><h2>邮件与通知状态</h2><p class="muted">只读展示，不显示密码/token。邮件参数仍建议在 PocketBase Settings → Mail 设置。</p>{#if settings}<ul class="status-list"><li>Application URL：{settings.mail.applicationUrlConfigured ? '已配置' : '未检测到 ENV 配置'}</li><li>SIGNUP_ALERT_EMAIL：{settings.mail.signupAlertEmailConfigured ? '已配置' : '未配置'}</li><li>NOTIFY_CRON_ENABLED：{settings.mail.notifyCronEnabled ? '启用' : '未启用'}</li><li>VAPID public/private keys：{settings.mail.vapidPublicKeyConfigured && settings.mail.vapidPrivateKeyConfigured ? '已配置' : '未完整配置/可能由 app_meta 自动生成'}</li><li>SMTP ENV：{settings.mail.smtpEnvConfigured ? '检测到' : '未检测到；请查 PocketBase Mail 设置'}</li></ul><a href={String(settings.mail.pocketBaseSettingsUrl)} target="_blank" rel="noreferrer">打开 PocketBase 邮件设置</a>{/if}</div></section>
 		{/if}
 	{/if}
 </main>
 
 <style>
-	.admin-page{width:min(1180px,100%);margin:0 auto;padding:2rem 1rem 4rem;color:var(--text)}.hero{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:1.25rem}.eyebrow{letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}.hero h1{font-size:clamp(2rem,5vw,4rem);margin:.2rem 0}.card{background:var(--panel);border:1px solid var(--border);border-radius:22px;padding:1.1rem;box-shadow:var(--shadow)}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}.metric span{color:var(--muted)}.metric strong{display:block;font-size:2.2rem;margin:.35rem 0}.metric small{color:var(--muted)}.tabs{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}.tabs button,.card button,.ghost{border:1px solid var(--border);border-radius:999px;padding:.65rem 1rem;background:var(--panel-strong);color:var(--text);font-weight:700;cursor:pointer}.tabs button.active,.card button:not(.danger){background:var(--accent);color:white}.danger{background:#fee2e2!important;color:#991b1b!important;border-color:#fecaca!important}.ghost{background:transparent}.login-card{max-width:520px}.login-card form{display:grid;gap:.8rem;margin:1rem 0}.login-card input,.toolbar input,select,.score{border:1px solid var(--border);border-radius:12px;padding:.55rem;background:var(--bg);color:var(--text)}label{display:grid;gap:.35rem}.error{color:#b91c1c;font-weight:700}.banner{margin:.5rem 0}.toolbar{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem}.toolbar h2{margin-right:auto}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:.7rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}th{color:var(--muted);font-size:.85rem}.score{width:4.5rem}.actions{margin-top:1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap}.split{display:grid;grid-template-columns:1fr 1fr;gap:1rem}@media (max-width:800px){.grid,.split{grid-template-columns:1fr}.hero{display:block}table{min-width:900px}}
+	.admin-page{width:min(1180px,100%);margin:0 auto;padding:2rem 1rem 4rem;color:var(--text)}.hero{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:1.25rem}.eyebrow{letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}.hero h1{font-size:clamp(2rem,5vw,4rem);margin:.2rem 0}.card{background:var(--panel);border:1px solid var(--border);border-radius:22px;padding:1.1rem;box-shadow:var(--shadow)}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}.metric span{color:var(--muted)}.metric strong{display:block;font-size:2.2rem;margin:.35rem 0}.metric small{color:var(--muted)}.tabs{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}.tabs button,.card button,.ghost{border:1px solid var(--border);border-radius:999px;padding:.65rem 1rem;background:var(--panel-strong);color:var(--text);font-weight:700;cursor:pointer}.tabs button.active,.card button:not(.danger){background:var(--accent);color:white}.danger{background:#fee2e2!important;color:#991b1b!important;border-color:#fecaca!important}.ghost{background:transparent}.login-card{max-width:520px}.login-card form{display:grid;gap:.8rem;margin:1rem 0}.login-card input,.toolbar input,select,.score{border:1px solid var(--border);border-radius:12px;padding:.55rem;background:var(--bg);color:var(--text)}label{display:grid;gap:.35rem}.error{color:#b91c1c;font-weight:700}.success{background:#ecfdf5;border:1px solid #bbf7d0;color:#166534;border-radius:14px;padding:.75rem}.success code{font-weight:800}.banner{margin:.5rem 0}.toolbar{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem}.muted{color:var(--muted)}.status-list{line-height:1.9}.toolbar h2{margin-right:auto}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{padding:.7rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}th{color:var(--muted);font-size:.85rem}.score{width:4.5rem}.actions{margin-top:1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap}.split{display:grid;grid-template-columns:1fr 1fr;gap:1rem}@media (max-width:800px){.grid,.split{grid-template-columns:1fr}.hero{display:block}table{min-width:900px}}
 </style>
