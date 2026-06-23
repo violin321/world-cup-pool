@@ -663,8 +663,8 @@ export const strings: Record<
 			darkTheme: '深色主题',
 			worldCupTheme: '世界杯主题',
 			standardTheme: '标准主题',
-			language: 'Bokmål',
-			languageAria: '切换到挪威语 Bokmål'
+			language: '语言',
+			languageAria: '选择语言'
 		},
 		auth: {
 			tagline: '比赛预测和世界杯预测，一个联赛搞定。',

@@ -1,4 +1,4 @@
-import { translateChinese } from './zh-CN';
+import { translateChineseValue } from './zh-CN';
 
 export type RuntimeLanguageCode = 'nb' | 'nn' | 'en' | 'zh-CN';
 
@@ -39,7 +39,7 @@ export function isRuntimeEnglish() {
 
 export function runtimeText<T>(nb: T, nn: T, en: T): T {
 	const lang = readRuntimeLanguage();
-	if (lang === 'zh-CN' && typeof en === 'string') return translateChinese(en) as T;
+	if (lang === 'zh-CN') return translateChineseValue(en) as T;
 	if (lang === 'en') return en;
 	if (lang === 'nn') return nn;
 	return nb;

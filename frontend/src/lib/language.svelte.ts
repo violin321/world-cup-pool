@@ -1,4 +1,4 @@
-import { translateChinese } from './zh-CN';
+import { translateChineseValue } from './zh-CN';
 import { browser } from '$app/environment';
 import { pb } from './pb';
 
@@ -69,8 +69,8 @@ class LanguageStore {
 	}
 
 	text<T>(nb: T, nn: T, en: T): T {
-		if (this.code === 'zh-CN' && typeof en === 'string') {
-			return translateChinese(en) as T;
+		if (this.code === 'zh-CN') {
+			return translateChineseValue(en) as T;
 		}
 		if (this.code === 'en') return en;
 		if (this.code === 'nn') return nn;

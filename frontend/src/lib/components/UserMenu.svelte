@@ -5,6 +5,7 @@
 	import { language } from '$lib/language.svelte';
 	import { strings } from '$lib/strings';
 	import Avatar from './Avatar.svelte';
+	import LanguageToggle from './LanguageToggle.svelte';
 	import {
 		LogOut,
 		ChevronDown,
@@ -81,9 +82,10 @@
 			<a class="item" href="/info" onclick={() => (open = false)}>
 				<Info size={17} /> {t.chrome.about}
 			</a>
-			<button class="item" type="button" onclick={() => language.toggle()}>
-				<Languages size={17} /> {t.chrome.language}
-			</button>
+			<div class="item language-item">
+				<Languages size={17} />
+				<LanguageToggle />
+			</div>
 			{#if showThemeAction}
 				<button class="item" type="button" onclick={toggleTheme}>
 					{#if isDark}
@@ -199,6 +201,17 @@
 	}
 	.item:hover {
 		background: var(--surface);
+	}
+	.language-item {
+		cursor: default;
+	}
+	.language-item :global(.language-select) {
+		flex: 1;
+		justify-content: flex-start;
+		height: 32px;
+		padding: 0 0.2rem;
+		background: transparent;
+		border: none;
 	}
 	.item.active {
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
