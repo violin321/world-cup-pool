@@ -12,6 +12,7 @@
 
 	let view = $state<'groups' | 'bracket' | 'topscorer'>('groups');
 	let bracketLayout = $state<'list' | 'classic'>('classic');
+	let bracketZoomOpen = $state(false);
 
 	$effect(() => {
 		if (!tipsStore.loaded) tipsStore.load().catch(() => {});
@@ -227,6 +228,14 @@
 		const minute = String(date.getMinutes()).padStart(2, '0');
 		return `${day}.${month} ${hour}:${minute}`;
 	}
+
+	function openBracketZoom() {
+		bracketZoomOpen = true;
+	}
+
+	function closeBracketZoom() {
+		bracketZoomOpen = false;
+	}
 </script>
 
 <div class="stickyhead" use:collapseOnScroll>
@@ -331,10 +340,19 @@
 			<div class="fabpad"></div>
 		</div>
 	{:else}
-		<div class="classic-hint muted">
-			{language.text('Sveip sidelengs for å lese hele treet.', 'Sveip sidelengs for å lese heile treet.', 'Swipe sideways to read the full bracket.')}
+		<div class="classic-actions">
+			<div class="classic-hint muted">
+				{language.text(
+					'Sveip sidelengs for forhåndsvisning, eller åpne hele treet i stor visning.',
+					'Sveip sidelengs for førehandsvising, eller opne heile treet i stor vising.',
+					'Swipe sideways for preview, or open the full bracket in a larger view.'
+				)}
+			</div>
+			<button class="zoom-open" type="button" onclick={openBracketZoom}>
+				{language.text('Åpne stort tre', 'Opne stort tre', 'View full bracket')}
+			</button>
 		</div>
-		<div class="classic-shell card">
+		<div class="classic-shell card" aria-label={language.text('Forhåndsvisning av klassisk turneringstre', 'Førehandsvising av klassisk turneringstre', 'Classic bracket preview')}>
 			<div class="classic-bracket" style={`--rounds: ${classicBracket.length}`}>
 				{#each classicBracket as col (col.stage)}
 					<section class={`classic-round stage-${col.stage.toLowerCase()}`} id={`st-${col.stage}`}>
@@ -378,6 +396,51 @@
 				{/each}
 			</div>
 		</div>
+		{#if bracketZoomOpen}
+			<div class="bracket-overlay" role="dialog" aria-modal="true" aria-label={language.text('Stor visning av klassisk turneringstre', 'Stor vising av klassisk turneringstre', 'Expanded classic bracket view')}>
+				<div class="bracket-overlay-head">
+					<div>
+						<p class="round-kicker">{language.text('Full visning', 'Full vising', 'Expanded view')}</p>
+						<h2>{language.text('Klassisk turneringstre', 'Klassisk turneringstre', 'Classic tournament tree')}</h2>
+						<p class="muted">{language.text('Panorer sidelengs og vertikalt for å følge hele veien til finalen.', 'Panorer sidelengs og vertikalt for å følgje heile vegen til finalen.', 'Pan horizontally and vertically to follow every path to the final.')}</p>
+					</div>
+					<button class="zoom-close" type="button" onclick={closeBracketZoom} aria-label={language.text('Lukk stor visning', 'Lukk stor vising', 'Close expanded bracket')}>×</button>
+				</div>
+				<div class="bracket-overlay-body">
+					<div class="classic-bracket classic-bracket-large" style={`--rounds: ${classicBracket.length}`}>
+						{#each classicBracket as col (col.stage)}
+							<section class={`classic-round stage-${col.stage.toLowerCase()}`}>
+								<header class="round-head">
+									<span class="round-kicker">{stageShort(col.stage)}</span>
+									<h3>{knockoutStageName(col.stage)}</h3>
+								</header>
+								<div class="round-stack">
+									{#each col.matches as m (m.id)}
+										{@const H = tn(m.homeTeam)}
+										{@const A = tn(m.awayTeam)}
+										{@const done = played(m)}
+										<article class="tree-match" class:done class:live={tipsStore.liveMatchIds.has(m.id)}>
+											<div class="match-meta"><span>#{m.num}</span><span>{kickoffText(m.kickoff)}</span></div>
+											<div class="tree-team" class:won={done && m.advancer === m.homeTeam} class:tbd={!H}>
+												<span class="flag-slot">{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{:else}<span>{teamCode(H, m.homeLabel)}</span>{/if}</span>
+												<span class="team-main"><span class="team-name">{teamSeedLabel(H, m.homeLabel)}</span><span class="team-code">{teamSource(H, m.homeLabel)}</span></span>
+												<span class="team-score digits">{#if done}{m.ftHome}{:else}–{/if}</span>
+											</div>
+											<div class="tree-team" class:won={done && m.advancer === m.awayTeam} class:tbd={!A}>
+												<span class="flag-slot">{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{:else}<span>{teamCode(A, m.awayLabel)}</span>{/if}</span>
+												<span class="team-main"><span class="team-name">{teamSeedLabel(A, m.awayLabel)}</span><span class="team-code">{teamSource(A, m.awayLabel)}</span></span>
+												<span class="team-score digits">{#if done}{m.ftAway}{:else}–{/if}</span>
+											</div>
+											{#if done && (m.penHome || m.penAway)}<p class="match-note">{scoreText(m)}</p>{/if}
+										</article>
+									{/each}
+								</div>
+							</section>
+						{/each}
+					</div>
+				</div>
+			</div>
+		{/if}
 		{#if thirdPlaceMatches.length}
 			<section class="third-strip card">
 				<h3>{knockoutStageName('3RD')}</h3>
@@ -598,9 +661,39 @@
 	.ko-seg button {
 		flex: 0 0 auto;
 	}
+	.classic-actions {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin: 0 0 0.6rem;
+	}
 	.classic-hint {
-		margin: 0 0 0.55rem;
+		margin: 0;
 		font-size: 0.78rem;
+	}
+	.zoom-open,
+	.zoom-close {
+		border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+		background: color-mix(in srgb, var(--accent) 13%, var(--surface-2));
+		color: var(--text);
+		font-weight: 850;
+		box-shadow: 0 12px 28px -24px color-mix(in srgb, var(--accent) 55%, transparent);
+	}
+	.zoom-open {
+		flex: 0 0 auto;
+		padding: 0.62rem 0.9rem;
+		border-radius: var(--radius-pill);
+		font-size: 0.82rem;
+	}
+	.zoom-close {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 999px;
+		font-size: 1.45rem;
+		line-height: 1;
 	}
 	.classic-shell {
 		position: relative;
@@ -615,9 +708,9 @@
 	.classic-bracket {
 		display: grid;
 		grid-template-columns: repeat(var(--rounds), minmax(13.5rem, 1fr));
-		gap: 1.25rem;
+		gap: 1.75rem;
 		width: max-content;
-		min-width: 72rem;
+		min-width: 74rem;
 		align-items: stretch;
 	}
 	.classic-round {
@@ -653,6 +746,26 @@
 		justify-content: space-around;
 		gap: 0.85rem;
 		min-height: 100%;
+		position: relative;
+	}
+	.round-stack::before {
+		content: '';
+		position: absolute;
+		inset: 0 -0.88rem 0 auto;
+		width: 1px;
+		border-radius: 999px;
+		background: linear-gradient(
+			180deg,
+			transparent 3%,
+			color-mix(in srgb, var(--accent) 24%, var(--border)) 16%,
+			color-mix(in srgb, var(--accent) 14%, var(--border)) 84%,
+			transparent 97%
+		);
+		opacity: 0.78;
+		pointer-events: none;
+	}
+	.stage-final .round-stack::before {
+		display: none;
 	}
 	.tree-match {
 		position: relative;
@@ -664,13 +777,26 @@
 		box-shadow: 0 14px 34px -28px rgba(0, 0, 0, 0.95);
 		overflow: visible;
 	}
+	.tree-match::before,
 	.tree-match::after {
 		content: '';
 		position: absolute;
-		left: calc(100% + 1px);
 		top: 50%;
-		width: 1.25rem;
-		border-top: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+		transform: translateY(-50%);
+		pointer-events: none;
+	}
+	.tree-match::before {
+		right: calc(100% + 1px);
+		width: 0.85rem;
+		border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+	}
+	.stage-r32 .tree-match::before {
+		display: none;
+	}
+	.tree-match::after {
+		left: calc(100% + 1px);
+		width: 0.88rem;
+		border-top: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
 	}
 	.stage-final .tree-match::after {
 		display: none;
@@ -753,6 +879,60 @@
 		font-size: 0.68rem;
 		text-align: center;
 	}
+	.bracket-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 80;
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr);
+		background:
+			radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 36%),
+			color-mix(in srgb, var(--bg) 92%, #000);
+		backdrop-filter: blur(18px);
+		padding: max(env(safe-area-inset-top), 0.75rem) max(env(safe-area-inset-right), 0.75rem)
+			max(env(safe-area-inset-bottom), 0.75rem) max(env(safe-area-inset-left), 0.75rem);
+	}
+	.bracket-overlay-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.75rem 0.25rem 0.9rem;
+	}
+	.bracket-overlay-head h2 {
+		margin: 0.18rem 0;
+		font-size: clamp(1.15rem, 4vw, 1.75rem);
+	}
+	.bracket-overlay-head p {
+		margin-bottom: 0;
+	}
+	.bracket-overlay-body {
+		min-height: 0;
+		overflow: auto;
+		-webkit-overflow-scrolling: touch;
+		overscroll-behavior: contain;
+		border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+		border-radius: 22px;
+		background: color-mix(in srgb, var(--surface) 70%, transparent);
+		padding: 1rem;
+		scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent;
+	}
+	.classic-bracket-large {
+		grid-template-columns: repeat(var(--rounds), minmax(17rem, 18rem));
+		gap: 2rem;
+		min-width: 94rem;
+		padding: 0.2rem 0.5rem 1rem 0.2rem;
+	}
+	.classic-bracket-large .round-head h3 {
+		font-size: 1.08rem;
+	}
+	.classic-bracket-large .tree-team {
+		padding-block: 0.74rem;
+	}
+	.classic-bracket-large .flag-slot {
+		width: 2.25rem;
+		height: 2.25rem;
+	}
 	.third-strip {
 		display: flex;
 		align-items: center;
@@ -795,15 +975,40 @@
 		.ko-seg button {
 			flex: 1 1 0;
 		}
+		.classic-actions {
+			align-items: stretch;
+			flex-direction: column;
+			gap: 0.55rem;
+		}
+		.zoom-open {
+			justify-content: center;
+			width: 100%;
+			padding: 0.78rem 1rem;
+			font-size: 0.9rem;
+		}
 		.classic-shell {
 			margin: 0 -1rem;
 			border-left: 0;
 			border-right: 0;
 			border-radius: 0;
+			padding: 0.85rem 1rem;
 		}
 		.classic-bracket {
 			grid-template-columns: repeat(var(--rounds), 15rem);
-			min-width: 80rem;
+			gap: 1.55rem;
+			min-width: 82rem;
+		}
+		.bracket-overlay {
+			padding: max(env(safe-area-inset-top), 0.5rem) 0.55rem max(env(safe-area-inset-bottom), 0.55rem);
+		}
+		.bracket-overlay-body {
+			border-radius: 18px;
+			padding: 0.85rem;
+		}
+		.classic-bracket-large {
+			grid-template-columns: repeat(var(--rounds), 17rem);
+			gap: 1.8rem;
+			min-width: 93rem;
 		}
 		.third-strip {
 			align-items: flex-start;
@@ -820,6 +1025,14 @@
 		}
 		.ko-seg button {
 			width: 100%;
+		}
+		.classic-bracket {
+			grid-template-columns: repeat(var(--rounds), 14.25rem);
+			min-width: 78rem;
+		}
+		.classic-bracket-large {
+			grid-template-columns: repeat(var(--rounds), 16.25rem);
+			min-width: 89rem;
 		}
 	}
 
