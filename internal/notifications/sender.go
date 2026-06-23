@@ -74,6 +74,8 @@ func resolveLang(lang string) string {
 	switch strings.ToLower(strings.TrimSpace(lang)) {
 	case "en":
 		return "en"
+	case "zh-cn", "zh":
+		return "zh-CN"
 	case "nn":
 		return "nn"
 	default:
@@ -110,6 +112,8 @@ func testPushPayload(app core.App, lang string) pushPayload {
 	switch resolveLang(lang) {
 	case "en":
 		return pushPayload{Title: "Test notification", Body: "Push notifications are working on this device.", URL: base + "/settings", Tag: "push_test"}
+	case "zh-CN":
+		return pushPayload{Title: "测试通知", Body: "这台设备已可接收推送通知。", URL: base + "/settings", Tag: "push_test"}
 	case "nn":
 		return pushPayload{Title: "Testvarsel", Body: "Push-varsel fungerer på denne eininga.", URL: base + "/settings", Tag: "push_test"}
 	default:
@@ -129,6 +133,8 @@ func renderPushPayload(app core.App, event, lang string, data renderData) (pushP
 			return pushPayload{Title: "The World Cup is about to kick off", Body: "Submit your tips before the first match.", URL: base + "/tips", Tag: event}, true
 		case "nn":
 			return pushPayload{Title: "VM startar snart", Body: "Lever tipsa dine før første kamp.", URL: base + "/tips", Tag: event}, true
+		case "zh-CN":
+			return pushPayload{Title: "世界杯即将开赛", Body: "请在首场比赛前提交你的预测。", URL: base + "/tips", Tag: event}, true
 		default:
 			return pushPayload{Title: "VM starter snart", Body: "Lever tipsene dine før første kamp.", URL: base + "/tips", Tag: event}, true
 		}
@@ -140,6 +146,8 @@ func renderPushPayload(app core.App, event, lang string, data renderData) (pushP
 			return pushPayload{Title: "Matches starting soon", Body: itoa(n) + " " + plural(n, "match", "matches") + " you haven't tipped kick off within a day.", URL: base + "/tips", Tag: event}, true
 		case "nn":
 			return pushPayload{Title: "Kampar startar snart", Body: itoa(n) + " " + plural(n, "kamp", "kampar") + " du ikkje har tipsa startar innan eitt døgn.", URL: base + "/tips", Tag: event}, true
+		case "zh-CN":
+			return pushPayload{Title: "还有比赛未预测", Body: "你还有 " + itoa(n) + " 场即将开始的比赛未填写预测。", URL: base + "/tips", Tag: event}, true
 		default:
 			return pushPayload{Title: "Kamper starter snart", Body: itoa(n) + " " + plural(n, "kamp", "kamper") + " du ikke har tipset starter innen ett døgn.", URL: base + "/tips", Tag: event}, true
 		}
@@ -177,6 +185,8 @@ func layout(lang, heading, intro, ctaLabel, ctaURL, footer string) string {
 	kicker := "VM 2026"
 	if lang == "en" {
 		kicker = "World Cup 2026"
+	} else if lang == "zh-CN" {
+		kicker = "2026 世界杯"
 	}
 
 	cta := ""
@@ -242,6 +252,17 @@ func renderPreKickoff(lang, base string) rendered {
 				"Du får denne fordi du har slått på påminning før avspark. Du kan skru det av i Innstillingar.",
 			),
 		}
+	case "zh-CN":
+		return rendered{
+			Subject: "世界杯即将开赛 — 记得提交预测！",
+			HTML: layout(
+				lang,
+				"世界杯即将开赛",
+				"开球时间快到了。请确认你已经提交预测，避免错过积分。",
+				"提交预测", tipsURL,
+				"你收到这封邮件，是因为开启了开球前提醒。可在设置中关闭。",
+			),
+		}
 	default: // nb
 		return rendered{
 			Subject: "VM starter snart — husk å levere tipsene dine!",
@@ -281,6 +302,17 @@ func renderUpcoming(lang, base string, n int) rendered {
 				"Du har "+itoa(n)+" "+plural(n, "kamp", "kampar")+" som startar innan eitt døgn og som du ikkje har tipsa. Lever før avspark, så du ikkje går glipp av poeng.",
 				"Tips kampane", tipsURL,
 				"Du får denne fordi du har slått på påminning om komande kampar. Du kan skru det av i Innstillingar.",
+			),
+		}
+	case "zh-CN":
+		return rendered{
+			Subject: "比赛即将开始 — 你还没有提交预测",
+			HTML: layout(
+				lang,
+				itoa(n)+" 场比赛未预测",
+				"你还有 "+itoa(n)+" 场比赛将在 24 小时内开始且尚未填写预测。请在开球前提交，避免错过积分。",
+				"去预测比赛", tipsURL,
+				"你收到这封邮件，是因为开启了即将开赛提醒。可在设置中关闭。",
 			),
 		}
 	default: // nb

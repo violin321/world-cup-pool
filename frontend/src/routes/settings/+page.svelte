@@ -454,7 +454,10 @@
 	<section class="card">
 		<h3>{language.text('Passord', 'Passord', 'Password')}</h3>
 		<p class="muted small">
-			{#if isEnglish}
+			{#if language.isChinese}
+				我们会向 <strong>{auth.user?.email ?? ''}</strong> 发送重置链接。
+				使用该链接设置新密码。
+			{:else if isEnglish}
 				We will send a reset link to <strong>{auth.user?.email ?? ''}</strong>.
 				Use it to choose a new password.
 			{:else if language.isNynorsk}
@@ -558,7 +561,9 @@
 		</p>
 		<div class="field">
 			<label for="delete-confirm">
-				{#if language.isEnglish}
+				{#if language.isChinese}
+					输入 <strong>DELETE</strong> 确认删除
+				{:else if language.isEnglish}
 					Type <strong>DELETE</strong> to confirm
 				{:else if language.isNynorsk}
 					Skriv <strong>DELETE</strong> eller <strong>SLETT</strong> for å stadfeste

@@ -24,6 +24,14 @@ const knockoutLabels = {
 		SF: 'Semi-finals',
 		'3RD': 'Third-place play-off',
 		FINAL: 'Final'
+	},
+	'zh-CN': {
+		R32: '32 强赛',
+		R16: '16 强赛',
+		QF: '四分之一决赛',
+		SF: '半决赛',
+		'3RD': '季军赛',
+		FINAL: '决赛'
 	}
 } as const;
 

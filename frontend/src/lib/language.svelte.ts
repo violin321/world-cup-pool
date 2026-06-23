@@ -1,14 +1,15 @@
+import { translateChinese } from './zh-CN';
 import { browser } from '$app/environment';
 import { pb } from './pb';
 
-export type LanguageCode = 'nb' | 'nn' | 'en';
+export type LanguageCode = 'nb' | 'nn' | 'en' | 'zh-CN';
 
 const STORAGE_KEY = 'language';
 const DEFAULT_LANGUAGE: LanguageCode = 'en';
-const LANGUAGE_ORDER: LanguageCode[] = ['en', 'nb', 'nn'];
+const LANGUAGE_ORDER: LanguageCode[] = ['en', 'zh-CN', 'nb', 'nn'];
 
 export function isLanguageCode(value: unknown): value is LanguageCode {
-	return value === 'nb' || value === 'nn' || value === 'en';
+	return value === 'nb' || value === 'nn' || value === 'en' || value === 'zh-CN';
 }
 
 function readAuthLanguage(): LanguageCode | null {
@@ -47,11 +48,16 @@ class LanguageStore {
 	get locale() {
 		// `nn-NO` falls back inconsistently in some browsers; `no-NO`
 		// keeps Norwegian date/time formatting stable while UI copy chooses nb/nn.
+		if (this.code === 'zh-CN') return 'zh-CN';
 		return this.code === 'en' ? 'en-US' : 'no-NO';
 	}
 
 	get isEnglish() {
 		return this.code === 'en';
+	}
+
+	get isChinese() {
+		return this.code === 'zh-CN';
 	}
 
 	get isBokmal() {
@@ -63,6 +69,9 @@ class LanguageStore {
 	}
 
 	text<T>(nb: T, nn: T, en: T): T {
+		if (this.code === 'zh-CN' && typeof en === 'string') {
+			return translateChinese(en) as T;
+		}
 		if (this.code === 'en') return en;
 		if (this.code === 'nn') return nn;
 		return nb;

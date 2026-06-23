@@ -646,5 +646,166 @@ export const strings: Record<
 			toggleToDecimal: 'Show odds',
 			toggleToPct: 'Show %'
 		}
+	},
+	'zh-CN': {
+		nav: {
+			home: '首页',
+			matchTips: '比赛预测',
+			worldCupTips: '世界杯预测',
+			bracket: '赛程图',
+			leagues: '联赛'
+		},
+		chrome: {
+			settings: '设置',
+			about: '关于游戏',
+			logout: '退出登录',
+			lightTheme: '浅色主题',
+			darkTheme: '深色主题',
+			worldCupTheme: '世界杯主题',
+			standardTheme: '标准主题',
+			language: 'Bokmål',
+			languageAria: '切换到挪威语 Bokmål'
+		},
+		auth: {
+			tagline: '比赛预测和世界杯预测，一个联赛搞定。',
+			subtitle: '邀请朋友，预测比赛，从开球起追踪世界杯进程。',
+			emailLabel: '邮箱',
+			passwordLabel: '密码',
+			emailPlaceholder: 'name@example.com',
+			login: '登录',
+			forgotPassword: '忘记密码？',
+			or: '或',
+			newHere: '新用户？',
+			createAccount: '创建账号。',
+			google: '使用 Google 继续',
+			wrongCredentials: '邮箱或密码错误。',
+			googleFailed: 'Google 登录失败。'
+		},
+		register: {
+			title: '创建账号',
+			subtitle: '加入世界杯预测比赛。',
+			nameLabel: '显示名称',
+			passwordHint: '密码至少需要 8 个字符。',
+			create: '创建账号',
+			loginPrompt: '已有账号？',
+			loginLink: '登录',
+			error: '无法创建账号。',
+			passwordTooShort: '密码至少需要 8 个字符。'
+		},
+		forgotPassword: {
+			title: '重置密码',
+			subtitle: '输入注册邮箱，我们会发送重置链接。',
+			emailLabel: '邮箱',
+			send: '发送重置链接',
+			success: '如果该邮箱已注册，重置链接将发送到邮箱。',
+			back: '返回登录',
+			error: '无法发送重置链接。'
+		},
+		resetPassword: {
+			title: '设置新密码',
+			subtitle: '请输入并确认你的新密码。',
+			newPasswordLabel: '新密码',
+			confirmLabel: '确认新密码',
+			update: '更新密码',
+			success: '密码已更新，即将跳转到登录页…',
+			back: '返回登录',
+			errorInvalid: '链接无效或已过期。',
+			errorMismatch: '两次输入的密码不一致。',
+			passwordTooShort: '密码至少需要 8 个字符。',
+			updateError: '无法更新密码。'
+		},
+		search: {
+			trigger: '搜索',
+			panelAria: '搜索 VM Tipping',
+			placeholder: '搜索比赛、球队、小组或联赛',
+			close: '关闭搜索',
+			loading: '正在加载搜索…',
+			empty: '查找比赛、球队或联赛。',
+			noResults: '没有结果。',
+			matches: '比赛',
+			teams: '球队',
+			groups: '小组',
+			leagues: '我的联赛',
+			noLeagues: '暂无联赛'
+		},
+		pwa: {
+			installTitle: '安装 VM Tipping',
+			installBody: '主屏幕图标、全屏体验，启动更快。',
+			installButton: '安装',
+			close: '关闭',
+			iosTitle: '将 VM Tipping 添加到主屏幕',
+			iosStep1: '点击 Safari 工具栏中的分享按钮。',
+			iosStep2: '向下滚动并选择添加到主屏幕。',
+			iosStep3: '点击右上角的添加。',
+			understood: '知道了'
+		},
+		introCard: {
+			kicker: '新用户？',
+			title: '欢迎使用 VM Tipping',
+			body: '预测比赛、加入联赛，追踪整个世界杯期间的积分。',
+			leaguesTitle: '联赛',
+			leaguesBody: '创建联赛，或使用邀请码加入。',
+			matchTipsTitle: '比赛预测',
+			matchTipsBody: '开球前提交预测。',
+			worldCupTipsTitle: '世界杯预测',
+			worldCupTipsBody: '预测淘汰赛和冠军。',
+			primaryCta: '打开联赛',
+			secondaryCta: '查看比赛预测',
+			footnote: '',
+			close: '关闭介绍卡片',
+			settingsTitle: '欢迎卡片',
+			settingsBody: '如果需要快速回顾，可在首页重新显示欢迎卡片。',
+			settingsActive: '欢迎卡片已启用，会显示在首页，直到你关闭它。',
+			settingsDismissed: '欢迎卡片已在此设备上对该用户隐藏。',
+			settingsButton: '重新显示欢迎卡片',
+			settingsSuccess: '欢迎卡片已准备好重新显示在首页。',
+			settingsLink: '前往首页'
+		},
+		tipCard: {
+			lockedResult: '赛果',
+			noTipLocked: '未提交比赛预测 — 本场已锁定。',
+			showFriendTips: '显示好友预测',
+			hideFriendTips: '隐藏好友预测',
+			noFriendTips: '这个联赛中还没有人预测这场比赛。',
+			saved: '已保存',
+			loading: '保存中…',
+			stageGroup: '小组',
+			stageOther: '轮次',
+			day: '今天',
+			live: '直播中',
+			locked: '已锁定',
+			missing: '未填写',
+			result: '已预测',
+			goThrough: '晋级',
+			penalties: '点球',
+			save: '保存',
+			visiting: '你的预测',
+			crowdTitle: '大家的预测',
+			crowdEmpty: '还没有其他人预测这场比赛。',
+			crowdHome: '主队',
+			crowdDraw: '平局',
+			crowdAway: '客队',
+			crowdTotal: '条预测'
+		},
+		playerCard: {
+			title: '玩家卡片',
+			hitRate: '命中率',
+			hitRateSub: '完全命中',
+			longestStreak: '最长连续得分',
+			longestStreakSub: '连续得分场次',
+			currentStreak: '当前连续得分',
+			largestMiss: '最大偏差',
+			largestMissSub: '你的预测',
+			noStats: '暂无已计分比赛。'
+		},
+		common: {
+			languageName: '简体中文'
+		},
+		odds: {
+			sourceOddsApi: '赔率',
+			sourceRankings: 'FIFA 排名',
+			toggleToDecimal: '显示赔率',
+			toggleToPct: '显示 %'
+		}
 	}
 };
