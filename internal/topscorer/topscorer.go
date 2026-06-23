@@ -19,14 +19,15 @@ import (
 )
 
 const (
-	collectionName  = "golden_boot_players"
-	activeSyncEvery = 5 * time.Minute
-	idleSyncEvery   = time.Hour
-	settleWindow    = 2 * time.Hour
-	rateWindow      = time.Minute
-	searchLimit     = 30
-	ensureLimit     = 10
-	fallbackSource  = "dongqiudi"
+	collectionName     = "golden_boot_players"
+	activeSyncEvery    = 5 * time.Minute
+	idleSyncEvery      = time.Hour
+	settleWindow       = 2 * time.Hour
+	rateWindow         = time.Minute
+	searchLimit        = 30
+	ensureLimit        = 10
+	fallbackSource     = "dongqiudi"
+	openfootballSource = "openfootball"
 )
 
 // liveStatusFilter matches the matches.status values the provider uses while a
@@ -40,9 +41,10 @@ type rateLimiter struct {
 }
 
 var (
-	searchLimiter     = &rateLimiter{hits: map[string][]time.Time{}}
-	ensureLimiter     = &rateLimiter{hits: map[string][]time.Time{}}
-	dongqiudiFallback = newDongqiudiTopScorerSource()
+	searchLimiter        = &rateLimiter{hits: map[string][]time.Time{}}
+	ensureLimiter        = &rateLimiter{hits: map[string][]time.Time{}}
+	dongqiudiFallback    = newDongqiudiTopScorerSource()
+	openfootballFallback = newOpenfootballTopScorerSource()
 )
 
 func (r *rateLimiter) allow(key string, limit int, window time.Duration) bool {
@@ -245,9 +247,9 @@ func Register(app core.App, serveEvent *core.ServeEvent) {
 		startSmartSync(app, client)
 		log.Printf("[topscorer] auto-sync enabled (active %v / idle %v)", activeSyncEvery, idleSyncEvery)
 	} else {
-		client = dongqiudiFallback
+		client = openfootballFallback
 		startSmartSync(app, client)
-		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using %s fallback only", dongqiudiSourceLabel)
+		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using %s/%s fallback only", openfootballSourceLabel, dongqiudiSourceLabel)
 	}
 
 	serveEvent.Router.POST("/api/admin/topscorers/refresh", func(requestEvent *core.RequestEvent) error {
@@ -401,6 +403,9 @@ func fetchTopScorers(ctx context.Context, client apiClient) ([]football.TopScore
 		if _, ok := client.(*dongqiudiTopScorerSource); ok {
 			return scorers, fallbackSource, err
 		}
+		if _, ok := client.(*openfootballTopScorerSource); ok {
+			return scorers, openfootballSource, err
+		}
 		if err == nil && len(scorers) > 0 {
 			return scorers, "api-football", nil
 		}
@@ -409,6 +414,17 @@ func fetchTopScorers(ctx context.Context, client apiClient) ([]football.TopScore
 		} else {
 			log.Printf("[topscorer] API-Football top scorers empty, trying %s fallback", dongqiudiSourceLabel)
 		}
+	}
+
+	openfootballScorers, openfootballErr := openfootballFallback.TopScorers(ctx)
+	if openfootballErr == nil && len(openfootballScorers) > 0 {
+		log.Printf("[topscorer] using %s top-scorer fallback", openfootballSourceLabel)
+		return openfootballScorers, openfootballSource, nil
+	}
+	if openfootballErr != nil {
+		log.Printf("[topscorer] %s top scorers unavailable, trying %s fallback: %v", openfootballSourceLabel, dongqiudiSourceLabel, openfootballErr)
+	} else {
+		log.Printf("[topscorer] %s top scorers empty, trying %s fallback", openfootballSourceLabel, dongqiudiSourceLabel)
 	}
 
 	scorers, err := dongqiudiFallback.TopScorers(ctx)
@@ -430,6 +446,7 @@ func syncScorers(app core.App, scorers []football.TopScorer, source string) erro
 	if err != nil {
 		return err
 	}
+	clearStaleDynamicStandings(app, source)
 
 	now := time.Now().UTC()
 	updated := 0
@@ -460,6 +477,10 @@ func syncScorers(app core.App, scorers []football.TopScorer, source string) erro
 		record.Set("team", teamRecord.Id)
 		if scorer.PhotoURL != "" {
 			record.Set("photoUrl", scorer.PhotoURL)
+		} else if record.GetString("photoUrl") == "" {
+			if photoURL := knownPhotoURL(app, scorer); photoURL != "" {
+				record.Set("photoUrl", photoURL)
+			}
 		}
 		record.Set("goals", scorer.Goals)
 		record.Set("assists", scorer.Assists)
@@ -480,6 +501,30 @@ func syncScorers(app core.App, scorers []football.TopScorer, source string) erro
 	}
 	log.Printf("[topscorer] sync done via %s: %d updated, %d unmatched", sourceLabel(source), updated, len(unmatched))
 	return nil
+}
+
+func clearStaleDynamicStandings(app core.App, activeSource string) {
+	prefixes := []string{"dqd:", "of:"}
+	for _, prefix := range prefixes {
+		if (activeSource == fallbackSource && prefix == "dqd:") || (activeSource == openfootballSource && prefix == "of:") {
+			continue
+		}
+		records, err := app.FindRecordsByFilter(collectionName, "providerKey ~ {:key} && goals > 0", "", 0, 0, map[string]any{"key": prefix})
+		if err != nil {
+			continue
+		}
+		for _, record := range records {
+			if !strings.HasPrefix(record.GetString("providerKey"), prefix) {
+				continue
+			}
+			record.Set("goals", 0)
+			record.Set("assists", 0)
+			record.Set("rank", 0)
+			if err := app.Save(record); err != nil {
+				log.Printf("[topscorer] clear stale %s standings %s: %v", prefix, record.Id, err)
+			}
+		}
+	}
 }
 
 func ForecastPayload(app core.App) (ForecastData, error) {
@@ -859,6 +904,30 @@ func findByPlayerTeam(app core.App, playerName, teamID string) (*core.Record, er
 	return nil, nil
 }
 
+func knownPhotoURL(app core.App, scorer football.TopScorer) string {
+	if scorer.ProviderID > 0 {
+		if record, err := app.FindFirstRecordByFilter(collectionName, "providerId = {:id} && photoUrl != ''", map[string]any{"id": scorer.ProviderID}); err == nil && record != nil {
+			return record.GetString("photoUrl")
+		}
+	}
+	teamRecord, err := teamByName(app, scorer.TeamName)
+	if err != nil || teamRecord == nil {
+		return ""
+	}
+	if record, err := findByPlayerTeam(app, scorer.Name, teamRecord.Id); err == nil && record != nil {
+		return record.GetString("photoUrl")
+	}
+	return ""
+}
+
+func teamByName(app core.App, name string) (*core.Record, error) {
+	teams, err := teamsByCanon(app)
+	if err != nil {
+		return nil, err
+	}
+	return teams[canonTeam(name)], nil
+}
+
 // orderByGoals sorts a top-scorer slice the way a Golden Boot table should read:
 // most goals first, assists as the tie-break, then name for a stable, deterministic
 // order. Unlike sortPlayers it never consults the provider rank, so stale or
@@ -944,8 +1013,11 @@ func latestSync(players []Player) string {
 }
 
 func scorerProviderKey(scorer football.TopScorer, source string) string {
-	if source == fallbackSource || scorer.ProviderID <= 0 {
+	if source == fallbackSource {
 		return "dqd:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
+	}
+	if source == openfootballSource || scorer.ProviderID <= 0 {
+		return "of:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
 	}
 	return fmt.Sprintf("api:%d", scorer.ProviderID)
 }
@@ -958,6 +1030,9 @@ func sourceFromProviderKey(providerKey string) string {
 	if strings.HasPrefix(providerKey, "dqd:") {
 		return fallbackSource
 	}
+	if strings.HasPrefix(providerKey, "of:") {
+		return openfootballSource
+	}
 	if strings.HasPrefix(providerKey, "api:") {
 		return "api-football"
 	}
@@ -968,6 +1043,8 @@ func sourceLabel(source string) string {
 	switch source {
 	case fallbackSource:
 		return dongqiudiSourceLabel
+	case openfootballSource:
+		return openfootballSourceLabel
 	case "api-football":
 		return "API-Football"
 	default:

@@ -128,3 +128,30 @@ func TestDongqiudiSourceCachesFetches(t *testing.T) {
 		t.Fatalf("server hits = %d, want 1", hits)
 	}
 }
+
+func TestAggregateOpenfootballTopScorers(t *testing.T) {
+	players := aggregateOpenfootballTopScorers([]openfootballMatch{
+		{
+			Team1:  "France",
+			Team2:  "Norway",
+			Goals1: []openfootballGoal{{Name: "Kylian Mbappé"}, {Name: "Kylian Mbappé"}, {Name: "Jules Koundé", OwnGoal: true}},
+			Goals2: []openfootballGoal{{Name: "Erling Haaland"}},
+		},
+		{
+			Team1:  "Norway",
+			Team2:  "France",
+			Goals1: []openfootballGoal{{Name: "Erling Haaland"}},
+			Goals2: []openfootballGoal{{Name: "Kylian Mbappé"}},
+		},
+	})
+
+	if len(players) != 2 {
+		t.Fatalf("len(players) = %d, want 2", len(players))
+	}
+	if players[0].Name != "Kylian Mbappé" || players[0].TeamName != "France" || players[0].Goals != 3 || players[0].Rank != 1 {
+		t.Fatalf("players[0] = %+v", players[0])
+	}
+	if players[1].Name != "Erling Haaland" || players[1].TeamName != "Norway" || players[1].Goals != 2 || players[1].Rank != 2 {
+		t.Fatalf("players[1] = %+v", players[1])
+	}
+}
