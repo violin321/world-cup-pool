@@ -162,7 +162,7 @@
 			<form onsubmit={(e) => { e.preventDefault(); void loginSuperuser(); }}>
 				<label>邮箱 <input bind:value={email} autocomplete="username" /></label>
 				<label>密码 <input bind:value={password} type="password" autocomplete="current-password" /></label>
-				<button disabled={busy}>{busy ? '登录中…' : '登录管理后台'}</button>
+				<button type="button" disabled={busy} onclick={() => void loginSuperuser()}>{busy ? '登录中…' : '登录管理后台'}</button>
 			</form>
 			<a href="/_/" target="_blank" rel="noreferrer">高级入口：PocketBase 原始后台</a>
 		</section>
