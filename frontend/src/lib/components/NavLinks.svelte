@@ -33,10 +33,7 @@
 		}).length;
 	});
 
-	let vmTipsMissing = $derived.by(() => {
-		if (!fs.loaded) return false;
-		return !fs.locked && (!fs.recId || !fs.isComplete);
-	});
+	let visibleNavItems = $derived(navItems.filter((it) => it.href !== '/forecast' || !fs.locked));
 
 	function getBadgeInfo(href: string): { count: number; show: boolean; isLive?: boolean; attention?: boolean } {
 		if (href === '/') {
@@ -46,7 +43,7 @@
 			return { count: missingMatchTips, show: missingMatchTips > 0 };
 		}
 		if (href === '/forecast') {
-			return { count: 1, show: vmTipsMissing };
+			return { count: 0, show: false };
 		}
 		if (href === '/leagues') {
 			const count = leagueBadges.totalCount;
@@ -65,7 +62,7 @@
 </script>
 
 <div class="links {variant}">
-	{#each navItems as it (it.href)}
+	{#each visibleNavItems as it (it.href)}
 		{@const Icon = it.icon}
 		{@const badge = getBadgeInfo(it.href)}
 		<a href={it.href} class:active={isActive(it.href, path)} class:attention={badge.attention} onclick={(event) => followNav(event, it.href)}>

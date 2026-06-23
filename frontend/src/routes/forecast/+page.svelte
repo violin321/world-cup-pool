@@ -282,10 +282,33 @@
 	<p class="muted">{language.text('Laster...', 'Lastar…', 'Loading…')}</p>
 {:else}
 	{#if fs.locked}
-		<div class="card lockbar"><Lock size={16} /> {language.text('Turneringen har startet - VM-tipset er låst.', 'Turneringa har starta - VM-tipset er endeleg.', 'The tournament has started - the World Cup tip is final.')}</div>
+		<div class="card forecast-locked-intro">
+			<div class="forecast-locked-icon"><Lock size={22} /></div>
+			<div>
+				<h2>{language.isChinese ? '世界杯整体预测已锁定' : language.text('VM-tipset er låst', 'VM-tipset er låst', 'World Cup tip is locked')}</h2>
+				<p class="muted">
+					{language.isChinese
+						? '世界杯整体预测已锁定；现在可继续提交未开赛的单场比赛预测。'
+						: language.text(
+							'VM-tipset for hele turneringen er låst. Du kan fortsatt levere kamptips for kamper som ikke har startet.',
+							'VM-tipset for heile turneringa er låst. Du kan framleis levere kamptips for kampar som ikkje har starta.',
+							'The whole-tournament World Cup tip is locked. You can still submit match tips for matches that have not kicked off.'
+						)}
+				</p>
+				<a class="tips-cta" href="/tips">{language.isChinese ? '去比赛预测' : language.text('Gå til kamptips', 'Gå til kamptips', 'Go to match tips')}</a>
+			</div>
+		</div>
+		{#if !fs.recId}
+			<div class="card empty-forecast-note">
+				<p class="muted">{language.text('Du rakk ikke å levere VM-tipset før låsen.', 'Du rakk ikkje å levere VM-tipset før låsen.', 'You did not submit a whole-tournament tip before the lock.')}</p>
+			</div>
+		{:else}
+			<div class="card lockbar"><Lock size={16} /> {language.text('Under er VM-tipset ditt i skrivebeskyttet visning.', 'Under er VM-tipset ditt i skrivebeskytta vising.', 'Your World Cup tip is shown below in read-only mode.')}</div>
+		{/if}
 	{/if}
 
-	{#if section === 'groups'}
+	{#if !fs.locked || fs.recId}
+	{#if section === 'groups'}}
 		<p class="muted small">
 			{language.text(
 				'Ranger hver gruppe fra 1. til 4. plass. Topp 2 går videre; 3.-plassen kan gå videre som beste treer.',
@@ -618,6 +641,8 @@
 		{/each}
 	{/if}
 
+	{/if}
+
 	{#if !fs.locked}
 		<div class="savebar">
 			<span class="savestat" class:err={saveState === 'error'}>
@@ -647,6 +672,43 @@
 		align-items: center;
 		gap: 0.5rem;
 		color: var(--warning);
+	}
+	.forecast-locked-intro {
+		display: flex;
+		align-items: flex-start;
+		gap: 1rem;
+		margin: 1rem 0;
+	}
+	.forecast-locked-intro h2 {
+		margin: 0 0 0.35rem;
+	}
+	.forecast-locked-intro p {
+		margin: 0 0 0.9rem;
+	}
+	.forecast-locked-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.65rem;
+		height: 2.65rem;
+		border-radius: 18px;
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		color: var(--accent);
+		flex: 0 0 auto;
+	}
+	.tips-cta {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.62rem 0.95rem;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--bg);
+		font-weight: 800;
+		text-decoration: none;
+	}
+	.empty-forecast-note {
+		margin-top: 1rem;
 	}
 	.stickyhead {
 		position: sticky;

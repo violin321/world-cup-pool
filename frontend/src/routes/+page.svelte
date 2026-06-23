@@ -1468,7 +1468,7 @@
 		</section>
 	{/if}
 
-	{#if !tournamentFinished && fs.loaded}
+	{#if !tournamentFinished && fs.loaded && !fs.locked}
 		<section class="card tile forecast-pulse-card home-span-support" class:urgent={forecastPulse.tone === 'urgent'} class:out={forecastPulse.tone === 'out'}>
 			<div class="hd">
 				<h3 style="flex:1"><Telescope size={15} style="margin-right:0.35rem;vertical-align:-2px;color:var(--gold)" /> {forecastPulse.kicker}: {forecastPulse.title}</h3>
