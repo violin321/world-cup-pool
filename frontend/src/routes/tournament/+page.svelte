@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { tipsStore, type Match } from '$lib/tips.svelte';
+	import { browser } from '$app/environment';
+	import { tipsStore, type Match, type Team } from '$lib/tips.svelte';
 	import Flag from '$lib/components/Flag.svelte';
 	import { collapseOnScroll } from '$lib/actions';
 	import { serverClock } from '$lib/serverclock.svelte';
@@ -10,10 +11,22 @@
 	import { forecastStore as fs } from '$lib/forecast.svelte';
 
 	let view = $state<'groups' | 'bracket' | 'topscorer'>('groups');
+	let bracketLayout = $state<'list' | 'classic'>('classic');
 
 	$effect(() => {
 		if (!tipsStore.loaded) tipsStore.load().catch(() => {});
 		if (!fs.loaded) fs.load().catch(() => {});
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const saved = localStorage.getItem('tournamentBracketLayout');
+		if (saved === 'list' || saved === 'classic') bracketLayout = saved;
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		localStorage.setItem('tournamentBracketLayout', bracketLayout);
 	});
 
 	function played(m: Match) {
@@ -103,6 +116,21 @@
 		}))
 	);
 
+	const classicStages = ['R32', 'R16', 'QF', 'SF', 'FINAL'];
+	let classicBracket = $derived(
+		classicStages.map((s) => ({
+			stage: s,
+			matches: tipsStore.matches
+				.filter((m) => m.stage === s)
+				.sort((a, b) => a.num - b.num)
+		}))
+	);
+	let thirdPlaceMatches = $derived(
+		tipsStore.matches
+			.filter((m) => m.stage === '3RD')
+			.sort((a, b) => a.num - b.num)
+	);
+
 	// Current knockout stage = stage of the next KO match not yet started
 	// (or the last stage once it's all done).
 	let currentStage = $derived.by(() => {
@@ -136,6 +164,43 @@
 		if (m.etHome || m.etAway) s = `${m.etHome}–${m.etAway} ${language.text('e.e.o.', 'e.eo.', 'aet')}`;
 		if (m.penHome || m.penAway) s += ` (${m.penHome}–${m.penAway} ${language.text('str', 'str', 'pens')})`;
 		return s;
+	}
+
+	function stageShort(stage: string) {
+		const labels: Record<string, string> = {
+			R32: language.text('32', '32', 'R32'),
+			R16: language.text('16', '16', 'R16'),
+			QF: language.text('Kvart', 'Kvart', 'QF'),
+			SF: language.text('Semi', 'Semi', 'SF'),
+			FINAL: language.text('Finale', 'Finale', 'Final')
+		};
+		if (language.isChinese) return ({ R32: '32强', R16: '16强', QF: '1/4', SF: '半决', FINAL: '决赛' } as Record<string, string>)[stage] ?? stage;
+		return labels[stage] ?? stage;
+	}
+
+	function kickoffText(iso: string) {
+		const date = new Date(iso);
+		if (!Number.isFinite(date.getTime())) return '';
+		return date.toLocaleString(language.locale, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
+	function teamCode(team: Team | null | undefined, fallback: string) {
+		return team?.fifaCode || fallback?.match(/[A-Z0-9]{2,4}/)?.[0] || 'TBD';
+	}
+
+	function teamSource(team: Team | null | undefined, fallback: string) {
+		if (team) return team.fifaCode;
+		return fallback || language.text('Ikke klar', 'Ikkje klar', 'TBD');
+	}
+
+	function teamSeedLabel(team: Team | null | undefined, fallback: string) {
+		if (team) return teamDisplayName(team, fallback);
+		return fallback || language.text('Ikke klar', 'Ikkje klar', 'TBD');
 	}
 
 	function initials(name: string) {
@@ -216,33 +281,119 @@
 		</div>
 	{/if}
 {:else if view === 'bracket'}
-	<div class="stagger">
-		{#each bracket as col (col.stage)}
-			<h3 class="rname" id={`st-${col.stage}`}>{knockoutStageName(col.stage)}</h3>
-			{#each col.matches as m (m.id)}
-				{@const H = tn(m.homeTeam)}
-				{@const A = tn(m.awayTeam)}
-				{@const done = played(m)}
-				<div class="bm card">
-					<div class="side" class:won={done && m.advancer === m.homeTeam}>
-						{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{/if}
-						<span class="nm" class:ph={!H}>{teamDisplayName(H, m.homeLabel)}</span>
+	<section class="ko-toolbar card" aria-label={language.text('Sluttspillvisning', 'Sluttspelvising', 'Knockout view')}>
+		<div>
+			<h2>{language.text('Sluttspill', 'Sluttspel', 'Knockout bracket')}</h2>
+			<p class="muted">
+				{language.text(
+					'Bytt mellom kompakt kampliste og klassisk turneringstre med flagg og runde-kolonner.',
+					'Byt mellom kompakt kampliste og klassisk turneringstre med flagg og runde-kolonnar.',
+					'Switch between the compact match list and a classic tournament tree with flags and round columns.'
+				)}
+			</p>
+		</div>
+		<div class="seg ko-seg">
+			<button class:on={bracketLayout === 'list'} onclick={() => (bracketLayout = 'list')}>
+				{language.text('Kompakt liste', 'Kompakt liste', 'Compact list')}
+			</button>
+			<button class:on={bracketLayout === 'classic'} onclick={() => (bracketLayout = 'classic')}>
+				{language.text('Klassisk tre', 'Klassisk tre', 'Classic bracket')}
+			</button>
+		</div>
+	</section>
+
+	{#if bracketLayout === 'list'}
+		<div class="stagger">
+			{#each bracket as col (col.stage)}
+				<h3 class="rname" id={`st-${col.stage}`}>{knockoutStageName(col.stage)}</h3>
+				{#each col.matches as m (m.id)}
+					{@const H = tn(m.homeTeam)}
+					{@const A = tn(m.awayTeam)}
+					{@const done = played(m)}
+					<div class="bm card">
+						<div class="side" class:won={done && m.advancer === m.homeTeam}>
+							{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{/if}
+							<span class="nm" class:ph={!H}>{teamDisplayName(H, m.homeLabel)}</span>
+						</div>
+						<div class="mid digits">
+							{#if done}{scoreText(m)}{:else}<span class="vs">vs</span>{/if}
+							{#if tipsStore.liveMatchIds.has(m.id)}
+								<span class="live-badge">LIVE</span>
+							{/if}
+						</div>
+						<div class="side right" class:won={done && m.advancer === m.awayTeam}>
+							<span class="nm" class:ph={!A}>{teamDisplayName(A, m.awayLabel)}</span>
+							{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{/if}
+						</div>
 					</div>
-					<div class="mid digits">
-						{#if done}{scoreText(m)}{:else}<span class="vs">vs</span>{/if}
-						{#if tipsStore.liveMatchIds.has(m.id)}
-							<span class="live-badge">LIVE</span>
-						{/if}
-					</div>
-					<div class="side right" class:won={done && m.advancer === m.awayTeam}>
-						<span class="nm" class:ph={!A}>{teamDisplayName(A, m.awayLabel)}</span>
-						{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{/if}
-					</div>
-				</div>
+				{/each}
 			{/each}
-		{/each}
-		<div class="fabpad"></div>
-	</div>
+			<div class="fabpad"></div>
+		</div>
+	{:else}
+		<div class="classic-hint muted">
+			{language.text('Sveip sidelengs for å lese hele treet.', 'Sveip sidelengs for å lese heile treet.', 'Swipe sideways to read the full bracket.')}
+		</div>
+		<div class="classic-shell card">
+			<div class="classic-bracket" style={`--rounds: ${classicBracket.length}`}>
+				{#each classicBracket as col (col.stage)}
+					<section class={`classic-round stage-${col.stage.toLowerCase()}`} id={`st-${col.stage}`}>
+						<header class="round-head">
+							<span class="round-kicker">{stageShort(col.stage)}</span>
+							<h3>{knockoutStageName(col.stage)}</h3>
+						</header>
+						<div class="round-stack">
+							{#each col.matches as m (m.id)}
+								{@const H = tn(m.homeTeam)}
+								{@const A = tn(m.awayTeam)}
+								{@const done = played(m)}
+								<article class="tree-match" class:done class:live={tipsStore.liveMatchIds.has(m.id)}>
+									<div class="match-meta">
+										<span>#{m.num}</span>
+										<span>{kickoffText(m.kickoff)}</span>
+									</div>
+									<div class="tree-team" class:won={done && m.advancer === m.homeTeam} class:tbd={!H}>
+										<span class="flag-slot">{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{:else}<span>{teamCode(H, m.homeLabel)}</span>{/if}</span>
+										<span class="team-main">
+											<span class="team-name">{teamSeedLabel(H, m.homeLabel)}</span>
+											<span class="team-code">{teamSource(H, m.homeLabel)}</span>
+										</span>
+										<span class="team-score digits">{#if done}{m.ftHome}{:else}–{/if}</span>
+									</div>
+									<div class="tree-team" class:won={done && m.advancer === m.awayTeam} class:tbd={!A}>
+										<span class="flag-slot">{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{:else}<span>{teamCode(A, m.awayLabel)}</span>{/if}</span>
+										<span class="team-main">
+											<span class="team-name">{teamSeedLabel(A, m.awayLabel)}</span>
+											<span class="team-code">{teamSource(A, m.awayLabel)}</span>
+										</span>
+										<span class="team-score digits">{#if done}{m.ftAway}{:else}–{/if}</span>
+									</div>
+									{#if done && (m.penHome || m.penAway)}
+										<p class="match-note">{scoreText(m)}</p>
+									{/if}
+								</article>
+							{/each}
+						</div>
+					</section>
+				{/each}
+			</div>
+		</div>
+		{#if thirdPlaceMatches.length}
+			<section class="third-strip card">
+				<h3>{knockoutStageName('3RD')}</h3>
+				{#each thirdPlaceMatches as m (m.id)}
+					{@const H = tn(m.homeTeam)}
+					{@const A = tn(m.awayTeam)}
+					{@const done = played(m)}
+					<div class="mini-third">
+						<span class:won={done && m.advancer === m.homeTeam}>{teamSeedLabel(H, m.homeLabel)}</span>
+						<b>{#if done}{scoreText(m)}{:else}vs{/if}</b>
+						<span class:won={done && m.advancer === m.awayTeam}>{teamSeedLabel(A, m.awayLabel)}</span>
+					</div>
+				{/each}
+			</section>
+		{/if}
+	{/if}
 {:else if view === 'topscorer'}
 	<section class="card gb-live">
 		<div class="gb-live-head">
@@ -411,6 +562,235 @@
 	@media (max-width: 500px) {
 		.tm-full { display: none; }
 		.tm-short { display: inline; }
+	}
+
+	.ko-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding: 1rem;
+	}
+	.ko-toolbar h2 {
+		font-size: 1.25rem;
+		margin-bottom: 0.2rem;
+	}
+	.ko-toolbar p {
+		margin: 0;
+		max-width: 44rem;
+		font-size: 0.86rem;
+	}
+	.ko-seg {
+		flex: none;
+		margin: 0;
+	}
+	.classic-hint {
+		margin: 0 0 0.55rem;
+		font-size: 0.78rem;
+	}
+	.classic-shell {
+		position: relative;
+		padding: 1rem;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent;
+		-webkit-overflow-scrolling: touch;
+	}
+	.classic-bracket {
+		display: grid;
+		grid-template-columns: repeat(var(--rounds), minmax(13.5rem, 1fr));
+		gap: 1.25rem;
+		min-width: 72rem;
+		align-items: stretch;
+	}
+	.classic-round {
+		display: grid;
+		grid-template-rows: auto 1fr;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.round-head {
+		padding: 0.65rem 0.7rem;
+		border: 1px solid var(--border);
+		border-radius: 16px;
+		background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+	}
+	.round-head h3 {
+		margin-top: 0.15rem;
+		font-size: 0.98rem;
+	}
+	.round-kicker {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.08rem 0.45rem;
+		border-radius: var(--radius-pill);
+		background: color-mix(in srgb, var(--accent) 13%, transparent);
+		color: var(--accent);
+		font: 800 0.62rem var(--font);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.round-stack {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-around;
+		gap: 0.85rem;
+		min-height: 100%;
+	}
+	.tree-match {
+		position: relative;
+		border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+		border-radius: 18px;
+		background:
+			radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%),
+			linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 86%, transparent), var(--surface));
+		box-shadow: 0 14px 34px -28px rgba(0, 0, 0, 0.95);
+		overflow: visible;
+	}
+	.tree-match::after {
+		content: '';
+		position: absolute;
+		left: calc(100% + 1px);
+		top: 50%;
+		width: 1.25rem;
+		border-top: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+	}
+	.stage-final .tree-match::after {
+		display: none;
+	}
+	.tree-match.live {
+		border-color: #ff3b30;
+		box-shadow: 0 0 0 1px rgba(255, 59, 48, 0.18), var(--glow);
+	}
+	.match-meta {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.42rem 0.65rem;
+		border-bottom: 1px solid var(--border);
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 700;
+	}
+	.tree-team {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.62rem 0.65rem;
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+	}
+	.tree-team:last-of-type {
+		border-bottom: none;
+	}
+	.tree-team.won {
+		background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent);
+	}
+	.tree-team.tbd {
+		color: var(--muted);
+	}
+	.flag-slot {
+		display: grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+		font-size: 0.62rem;
+		font-weight: 900;
+		letter-spacing: 0.02em;
+	}
+	.team-main {
+		display: grid;
+		min-width: 0;
+		gap: 0.08rem;
+	}
+	.team-name,
+	.team-code {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.team-name {
+		font-weight: 800;
+	}
+	.team-code {
+		color: var(--muted);
+		font-size: 0.66rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+	}
+	.team-score {
+		min-width: 1.55rem;
+		text-align: right;
+		color: var(--accent);
+		font-size: 1rem;
+		font-weight: 900;
+	}
+	.match-note {
+		margin: 0;
+		padding: 0.35rem 0.65rem 0.5rem;
+		border-top: 1px solid var(--border);
+		color: var(--muted);
+		font-size: 0.68rem;
+		text-align: center;
+	}
+	.third-strip {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-top: 1rem;
+		padding: 0.85rem 1rem;
+	}
+	.third-strip h3 {
+		flex: none;
+		font-size: 0.95rem;
+	}
+	.mini-third {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		min-width: 0;
+		color: var(--muted);
+	}
+	.mini-third span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 14rem;
+	}
+	.mini-third .won {
+		color: var(--accent);
+		font-weight: 800;
+	}
+	@media (max-width: 760px) {
+		.ko-toolbar {
+			align-items: stretch;
+			flex-direction: column;
+		}
+		.ko-seg {
+			width: 100%;
+		}
+		.classic-shell {
+			margin: 0 -1rem;
+			border-left: 0;
+			border-right: 0;
+			border-radius: 0;
+		}
+		.classic-bracket {
+			grid-template-columns: repeat(var(--rounds), 15rem);
+			min-width: 80rem;
+		}
+		.third-strip {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+		.mini-third {
+			width: 100%;
+			justify-content: space-between;
+		}
 	}
 
 	.gwrap {
