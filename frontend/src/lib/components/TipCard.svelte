@@ -52,6 +52,9 @@
 	let summaryEvents = $derived(
 		decisiveEvents(live ? (tipsStore.liveEvents[match.id] ?? []) : fetchedEvents)
 	);
+	let goalSummaryOnly = $derived(
+		summaryEvents.length > 0 && summaryEvents.every((event) => event.providerKey.startsWith('ofgoal:'))
+	);
 
 	async function ensureMatchEvents() {
 		if (eventsLoaded || !played) return;
@@ -381,7 +384,7 @@
 							class:red={event.type === 'Card'}
 							title={eventTitle(event, language.text('Assist', 'Assist', 'Assist'))}
 						>
-							<span class="mev-min">{eventMinute(event)}</span>
+							{#if eventMinute(event)}<span class="mev-min">{eventMinute(event)}</span>{/if}
 							<span class="mev-icon">{eventIcon(event)}</span>
 							{#if evTeam}
 								<Flag iso2={evTeam.iso2} code={evTeam.fifaCode} size={14} />
@@ -393,6 +396,9 @@
 						</span>
 					{/each}
 				</div>
+				{#if goalSummaryOnly}
+					<p class="muted small event-note">{language.isChinese ? '当前仅显示 openfootball 进球摘要；完整事件流（助攻、红黄牌、换人）不可用。' : language.text('Viser bare målsammendrag fra openfootball; komplett hendelsesstrøm (assist, kort, bytter) er ikke tilgjengelig.', 'Viser berre målsamandrag frå openfootball; komplett hendingsstraum (assist, kort, byte) er ikkje tilgjengeleg.', 'Showing openfootball goal summary only; full event feed (assists, cards, substitutions) is unavailable.')}</p>
+				{/if}
 			{/if}
 			{#if isKO && !resolved}
 					<p class="muted">{t.tipCard.loading}</p>

@@ -1,11 +1,28 @@
 package topscorer
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/oyvhov/world-cup-pool/internal/football"
 )
+
+type stubTopScorerClient struct {
+	players []football.TopScorer
+	err     error
+}
+
+func (s stubTopScorerClient) TopScorers(context.Context) ([]football.TopScorer, error) {
+	return s.players, s.err
+}
+
+func (s stubTopScorerClient) SearchPlayers(context.Context, string) ([]football.PlayerSearchResult, error) {
+	return nil, nil
+}
 
 func TestRateLimiterBlocksWithinWindow(t *testing.T) {
 	limiter := &rateLimiter{hits: map[string][]time.Time{}}
@@ -126,6 +143,47 @@ func TestDongqiudiSourceCachesFetches(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("server hits = %d, want 1", hits)
+	}
+}
+
+func TestFetchTopScorersPrefersDongqiudiBeforeOpenfootball(t *testing.T) {
+	oldDongqiudi := dongqiudiFallback
+	oldOpenfootball := openfootballFallback
+	t.Cleanup(func() {
+		dongqiudiFallback = oldDongqiudi
+		openfootballFallback = oldOpenfootball
+	})
+
+	dqdServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<tr><td class="rank font-family-number">1</td><td class="person"><span class="name">梅西</span></td><td class="team">阿根廷</td><td class="font-family-number">5</td></tr>`))
+	}))
+	defer dqdServer.Close()
+	ofbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"matches":[{"team1":"France","team2":"Norway","goals1":[{"name":"Kylian Mbappé"}],"goals2":[{"name":"Erling Haaland"}]}]}`))
+	}))
+	defer ofbServer.Close()
+
+	dongqiudiFallback = &dongqiudiTopScorerSource{url: dqdServer.URL, http: dqdServer.Client(), minFetch: time.Hour, now: time.Now}
+	openfootballFallback = &openfootballTopScorerSource{url: ofbServer.URL, http: ofbServer.Client()}
+
+	players, source, err := fetchTopScorers(t.Context(), stubTopScorerClient{err: errors.New("api unavailable")})
+	if err != nil {
+		t.Fatalf("fetchTopScorers() error = %v", err)
+	}
+	if source != fallbackSource {
+		t.Fatalf("source = %q, want %q", source, fallbackSource)
+	}
+	if len(players) != 1 || players[0].Name != "梅西" || players[0].TeamName != "阿根廷" || players[0].Goals != 5 {
+		t.Fatalf("players = %+v", players)
+	}
+}
+
+func TestScorerTeamFromDongqiudiProviderKey(t *testing.T) {
+	if got := scorerTeamFromProviderKey("dqd:梅西:阿根廷"); got != "阿根廷" {
+		t.Fatalf("scorerTeamFromProviderKey() = %q, want 阿根廷", got)
+	}
+	if got := scorerTeamFromProviderKey("of:lionelmessi:argentina"); got != "" {
+		t.Fatalf("openfootball key returned %q, want empty", got)
 	}
 }
 

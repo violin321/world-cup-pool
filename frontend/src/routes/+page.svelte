@@ -1241,7 +1241,7 @@
 										class:subst={event.type === 'subst'}
 										title={eventTitle(event, language.text('Assist', 'Assist', 'Assist'))}
 									>
-										<span class="min">{eventMinute(event)}</span>
+									{#if eventMinute(event)}<span class="min">{eventMinute(event)}</span>{/if}
 										<span class="event-icon">{eventIcon(event)}</span>
 											{#if evTeam}
 												<Flag iso2={evTeam.iso2} code={evTeam.fifaCode} size={14} />

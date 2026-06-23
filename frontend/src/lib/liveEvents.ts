@@ -6,6 +6,7 @@ import type { LiveEvent, Team } from '$lib/tips.svelte';
 // events count, and how provider duplicates are collapsed.
 
 export function eventMinute(event: LiveEvent): string {
+	if (event.elapsed <= 0) return '';
 	return event.extra > 0 ? `${event.elapsed}+${event.extra}'` : `${event.elapsed}'`;
 }
 

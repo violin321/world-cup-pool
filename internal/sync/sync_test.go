@@ -172,6 +172,47 @@ func TestEventProviderKeyUsesProviderIDsWhenPresent(t *testing.T) {
 	}
 }
 
+func TestOpenfootballGoalEventsParsesGoalSummary(t *testing.T) {
+	events := openfootballGoalEvents("match1", ofLiveMatch{
+		Team1:  "Qatar",
+		Team2:  "Switzerland",
+		Goals1: []ofLiveGoal{{Name: "Miro Muheim", Minute: "90+4", OwnGoal: true}},
+		Goals2: []ofLiveGoal{{Name: "Breel Embolo", Minute: "17", Penalty: true}},
+	})
+
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].player != "Miro Muheim" || events[0].team != "Qatar" || events[0].detail != "Own Goal" || events[0].elapsed != 90 || events[0].extra != 4 {
+		t.Fatalf("events[0] = %+v", events[0])
+	}
+	if events[1].player != "Breel Embolo" || events[1].team != "Switzerland" || events[1].detail != "Penalty" || events[1].elapsed != 17 || events[1].extra != 0 {
+		t.Fatalf("events[1] = %+v", events[1])
+	}
+	if events[0].providerKey == "" || events[0].providerKey == events[1].providerKey {
+		t.Fatalf("provider keys not stable/unique: %+v", events)
+	}
+}
+
+func TestParseOpenfootballMinute(t *testing.T) {
+	cases := []struct {
+		raw         string
+		wantElapsed int
+		wantExtra   int
+	}{
+		{"17", 17, 0},
+		{"90+4", 90, 4},
+		{"", 0, 0},
+		{"n/a", 0, 0},
+	}
+	for _, tc := range cases {
+		elapsed, extra := parseOpenfootballMinute(tc.raw)
+		if elapsed != tc.wantElapsed || extra != tc.wantExtra {
+			t.Fatalf("parseOpenfootballMinute(%q) = %d,%d; want %d,%d", tc.raw, elapsed, extra, tc.wantElapsed, tc.wantExtra)
+		}
+	}
+}
+
 func TestKickoffStillNeedsSoonPollingAfterKickoffGraceWindow(t *testing.T) {
 	now := time.Date(2026, 6, 11, 19, 27, 0, 0, time.UTC)
 	kickoff := now.Add(-27 * time.Minute)

@@ -247,9 +247,9 @@ func Register(app core.App, serveEvent *core.ServeEvent) {
 		startSmartSync(app, client)
 		log.Printf("[topscorer] auto-sync enabled (active %v / idle %v)", activeSyncEvery, idleSyncEvery)
 	} else {
-		client = openfootballFallback
+		client = dongqiudiFallback
 		startSmartSync(app, client)
-		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using %s/%s fallback only", openfootballSourceLabel, dongqiudiSourceLabel)
+		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using %s/%s fallback only", dongqiudiSourceLabel, openfootballSourceLabel)
 	}
 
 	serveEvent.Router.POST("/api/admin/topscorers/refresh", func(requestEvent *core.RequestEvent) error {
@@ -416,22 +416,25 @@ func fetchTopScorers(ctx context.Context, client apiClient) ([]football.TopScore
 		}
 	}
 
-	openfootballScorers, openfootballErr := openfootballFallback.TopScorers(ctx)
-	if openfootballErr == nil && len(openfootballScorers) > 0 {
-		log.Printf("[topscorer] using %s top-scorer fallback", openfootballSourceLabel)
-		return openfootballScorers, openfootballSource, nil
+	dongqiudiScorers, dongqiudiErr := dongqiudiFallback.TopScorers(ctx)
+	if dongqiudiErr == nil && len(dongqiudiScorers) > 0 {
+		log.Printf("[topscorer] using %s top-scorer fallback", dongqiudiSourceLabel)
+		return dongqiudiScorers, fallbackSource, nil
 	}
-	if openfootballErr != nil {
-		log.Printf("[topscorer] %s top scorers unavailable, trying %s fallback: %v", openfootballSourceLabel, dongqiudiSourceLabel, openfootballErr)
+	if dongqiudiErr != nil {
+		log.Printf("[topscorer] %s top scorers unavailable, trying %s fallback: %v", dongqiudiSourceLabel, openfootballSourceLabel, dongqiudiErr)
 	} else {
-		log.Printf("[topscorer] %s top scorers empty, trying %s fallback", openfootballSourceLabel, dongqiudiSourceLabel)
+		log.Printf("[topscorer] %s top scorers empty, trying %s fallback", dongqiudiSourceLabel, openfootballSourceLabel)
 	}
 
-	scorers, err := dongqiudiFallback.TopScorers(ctx)
-	if err != nil {
-		return nil, "", err
+	openfootballScorers, openfootballErr := openfootballFallback.TopScorers(ctx)
+	if openfootballErr != nil {
+		return nil, "", openfootballErr
 	}
-	return scorers, fallbackSource, nil
+	if len(openfootballScorers) > 0 {
+		log.Printf("[topscorer] using %s top-scorer fallback", openfootballSourceLabel)
+	}
+	return openfootballScorers, openfootballSource, nil
 }
 
 func syncScorers(app core.App, scorers []football.TopScorer, source string) error {
@@ -818,6 +821,11 @@ func view(app core.App, record *core.Record) Player {
 	if teamRecord, err := app.FindRecordById("teams", teamID); err == nil {
 		teamName = teamRecord.GetString("name")
 	}
+	if sourceFromProviderKey(record.GetString("providerKey")) == fallbackSource {
+		if chineseTeam := scorerTeamFromProviderKey(record.GetString("providerKey")); chineseTeam != "" {
+			teamName = chineseTeam
+		}
+	}
 	syncedAt := ""
 	if synced := record.GetDateTime("syncedAt").Time(); !synced.IsZero() {
 		syncedAt = synced.UTC().Format(time.RFC3339)
@@ -1020,6 +1028,14 @@ func scorerProviderKey(scorer football.TopScorer, source string) string {
 		return "of:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
 	}
 	return fmt.Sprintf("api:%d", scorer.ProviderID)
+}
+
+func scorerTeamFromProviderKey(providerKey string) string {
+	parts := strings.Split(providerKey, ":")
+	if len(parts) < 3 || parts[0] != "dqd" {
+		return ""
+	}
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func playerSource(record *core.Record) string {
