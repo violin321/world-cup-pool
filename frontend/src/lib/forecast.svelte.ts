@@ -30,11 +30,13 @@ export interface GoldenBootPlayer {
 	eligible: boolean;
 	seeded: boolean;
 	syncedAt?: string;
+	source?: string;
 }
 export interface GoldenBootData {
 	shortlist: GoldenBootPlayer[];
 	leaders: GoldenBootPlayer[];
 	updatedAt?: string;
+	source?: string;
 }
 
 /** Stable key for a KO match: its number, or the stage for the number-less

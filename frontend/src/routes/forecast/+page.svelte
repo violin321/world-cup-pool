@@ -413,8 +413,11 @@
 					'Pick a player or search for an outsider. A correct pick gives 15 points.'
 				)}
 			</p>
-			{#if fs.goldenBoot.updatedAt}
-				<span class="cnt">{language.text('Oppdatert', 'Oppdatert', 'Updated')} {updatedAt(fs.goldenBoot.updatedAt)}</span>
+			{#if fs.goldenBoot.updatedAt || fs.goldenBoot.source}
+				<span class="cnt">
+					{#if fs.goldenBoot.updatedAt}{language.text('Oppdatert', 'Oppdatert', 'Updated')} {updatedAt(fs.goldenBoot.updatedAt)}{/if}
+					{#if fs.goldenBoot.source}<span class="source-pill">{language.text('Kilde', 'Kjelde', 'Source')}: {fs.goldenBoot.source}</span>{/if}
+				</span>
 			{/if}
 		</div>
 
@@ -552,8 +555,11 @@
 		<section class="card gb-live">
 			<div class="gb-live-head">
 				<h3>{language.text('Toppscorere', 'Toppscorarar', 'Top scorers')}</h3>
-				{#if fs.goldenBoot.updatedAt}
-					<p class="muted small gb-updated">{language.text('Oppdatert', 'Oppdatert', 'Updated')} {updatedAt(fs.goldenBoot.updatedAt)}</p>
+				{#if fs.goldenBoot.updatedAt || fs.goldenBoot.source}
+					<p class="muted small gb-updated">
+						{#if fs.goldenBoot.updatedAt}{language.text('Oppdatert', 'Oppdatert', 'Updated')} {updatedAt(fs.goldenBoot.updatedAt)}{/if}
+						{#if fs.goldenBoot.source}<span class="source-pill">{language.text('Kilde', 'Kjelde', 'Source')}: {fs.goldenBoot.source}</span>{/if}
+					</p>
 				{/if}
 			</div>
 			<table class="gb-table">
@@ -854,6 +860,18 @@
 	.gb-head .small {
 		flex: 1;
 		margin: 0;
+	}
+	.source-pill {
+		display: inline-flex;
+		align-items: center;
+		margin-left: 0.4rem;
+		padding: 0.12rem 0.42rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 700;
 	}
 	.gb-pick {
 		display: flex;

@@ -82,6 +82,7 @@ export interface GoldenBootLeaguePlayer extends GoldenBootPlayer {
 export interface GoldenBootLeagueTable {
 	players: GoldenBootLeaguePlayer[];
 	updatedAt?: string;
+	source?: string;
 }
 
 export interface GoldenBootSearchResult {

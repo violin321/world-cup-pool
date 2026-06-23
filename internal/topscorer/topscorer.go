@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -25,6 +26,7 @@ const (
 	rateWindow      = time.Minute
 	searchLimit     = 30
 	ensureLimit     = 10
+	fallbackSource  = "dongqiudi"
 )
 
 // liveStatusFilter matches the matches.status values the provider uses while a
@@ -38,8 +40,9 @@ type rateLimiter struct {
 }
 
 var (
-	searchLimiter = &rateLimiter{hits: map[string][]time.Time{}}
-	ensureLimiter = &rateLimiter{hits: map[string][]time.Time{}}
+	searchLimiter     = &rateLimiter{hits: map[string][]time.Time{}}
+	ensureLimiter     = &rateLimiter{hits: map[string][]time.Time{}}
+	dongqiudiFallback = newDongqiudiTopScorerSource()
 )
 
 func (r *rateLimiter) allow(key string, limit int, window time.Duration) bool {
@@ -89,6 +92,7 @@ type Player struct {
 	Eligible bool   `json:"eligible"`
 	Seeded   bool   `json:"seeded"`
 	SyncedAt string `json:"syncedAt,omitempty"`
+	Source   string `json:"source,omitempty"`
 }
 
 type PickUser struct {
@@ -106,6 +110,7 @@ type ForecastData struct {
 	Shortlist []Player `json:"shortlist"`
 	Leaders   []Player `json:"leaders"`
 	UpdatedAt string   `json:"updatedAt,omitempty"`
+	Source    string   `json:"source,omitempty"`
 }
 
 type SearchPlayer struct {
@@ -126,6 +131,7 @@ type SearchPlayer struct {
 type LeagueTable struct {
 	Players   []LeaguePlayer `json:"players"`
 	UpdatedAt string         `json:"updatedAt,omitempty"`
+	Source    string         `json:"source,omitempty"`
 }
 
 // Provide hardcoded default photos for curated players so the shortlist
@@ -161,6 +167,57 @@ var teamAliases = map[string]string{
 	football.NormalizeName("Democratic Republic of Congo"): football.NormalizeName("DR Congo"),
 }
 
+var teamChineseAliases = map[string]string{
+	"MEX": "墨西哥",
+	"RSA": "南非",
+	"KOR": "韩国",
+	"CZE": "捷克",
+	"CAN": "加拿大",
+	"BIH": "波黑",
+	"QAT": "卡塔尔",
+	"SUI": "瑞士",
+	"BRA": "巴西",
+	"MAR": "摩洛哥",
+	"HAI": "海地",
+	"SCO": "苏格兰",
+	"USA": "美国",
+	"PAR": "巴拉圭",
+	"AUS": "澳大利亚",
+	"TUR": "土耳其",
+	"GER": "德国",
+	"CUW": "库拉索",
+	"CIV": "科特迪瓦",
+	"ECU": "厄瓜多尔",
+	"NED": "荷兰",
+	"JPN": "日本",
+	"SWE": "瑞典",
+	"TUN": "突尼斯",
+	"BEL": "比利时",
+	"EGY": "埃及",
+	"IRN": "伊朗",
+	"NZL": "新西兰",
+	"ESP": "西班牙",
+	"CPV": "佛得角",
+	"KSA": "沙特阿拉伯",
+	"URU": "乌拉圭",
+	"FRA": "法国",
+	"SEN": "塞内加尔",
+	"IRQ": "伊拉克",
+	"NOR": "挪威",
+	"ARG": "阿根廷",
+	"ALG": "阿尔及利亚",
+	"AUT": "奥地利",
+	"JOR": "约旦",
+	"POR": "葡萄牙",
+	"COD": "刚果民主共和国",
+	"UZB": "乌兹别克斯坦",
+	"COL": "哥伦比亚",
+	"ENG": "英格兰",
+	"CRO": "克罗地亚",
+	"GHA": "加纳",
+	"PAN": "巴拿马",
+}
+
 var accentReplacer = strings.NewReplacer(
 	"á", "a", "à", "a", "â", "a", "ä", "a", "ã", "a", "å", "a",
 	"Á", "a", "À", "a", "Â", "a", "Ä", "a", "Ã", "a", "Å", "a",
@@ -188,16 +245,15 @@ func Register(app core.App, serveEvent *core.ServeEvent) {
 		startSmartSync(app, client)
 		log.Printf("[topscorer] auto-sync enabled (active %v / idle %v)", activeSyncEvery, idleSyncEvery)
 	} else {
-		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using curated shortlist only")
+		client = dongqiudiFallback
+		startSmartSync(app, client)
+		log.Printf("[topscorer] API_FOOTBALL_KEY not set — using %s fallback only", dongqiudiSourceLabel)
 	}
 
 	serveEvent.Router.POST("/api/admin/topscorers/refresh", func(requestEvent *core.RequestEvent) error {
-		if key == "" {
-			return requestEvent.JSON(400, map[string]string{"error": "API_FOOTBALL_KEY is not set"})
-		}
 		ctx, cancel := context.WithTimeout(requestEvent.Request.Context(), 30*time.Second)
 		defer cancel()
-		if err := Sync(ctx, app, football.New(key)); err != nil {
+		if err := Sync(ctx, app, client); err != nil {
 			return requestEvent.JSON(500, map[string]string{"error": err.Error()})
 		}
 		return requestEvent.JSON(200, map[string]string{"status": "ok"})
@@ -328,7 +384,7 @@ func EnsureCurated(app core.App) error {
 }
 
 func Sync(ctx context.Context, app core.App, client apiClient) error {
-	scorers, err := client.TopScorers(ctx)
+	scorers, source, err := fetchTopScorers(ctx, client)
 	if err != nil {
 		return fmt.Errorf("fetch top scorers: %w", err)
 	}
@@ -336,9 +392,39 @@ func Sync(ctx context.Context, app core.App, client apiClient) error {
 		log.Printf("[topscorer] sync returned no scorers yet")
 		return nil
 	}
+	return syncScorers(app, scorers, source)
+}
+
+func fetchTopScorers(ctx context.Context, client apiClient) ([]football.TopScorer, string, error) {
+	if client != nil {
+		scorers, err := client.TopScorers(ctx)
+		if _, ok := client.(*dongqiudiTopScorerSource); ok {
+			return scorers, fallbackSource, err
+		}
+		if err == nil && len(scorers) > 0 {
+			return scorers, "api-football", nil
+		}
+		if err != nil {
+			log.Printf("[topscorer] API-Football top scorers unavailable, trying %s fallback: %v", dongqiudiSourceLabel, err)
+		} else {
+			log.Printf("[topscorer] API-Football top scorers empty, trying %s fallback", dongqiudiSourceLabel)
+		}
+	}
+
+	scorers, err := dongqiudiFallback.TopScorers(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	return scorers, fallbackSource, nil
+}
+
+func syncScorers(app core.App, scorers []football.TopScorer, source string) error {
 	collection, err := app.FindCollectionByNameOrId(collectionName)
 	if err != nil {
 		return err
+	}
+	if source == fallbackSource {
+		cleanupLegacyDongqiudiKeys(app)
 	}
 	teamByName, err := teamsByCanon(app)
 	if err != nil {
@@ -354,7 +440,7 @@ func Sync(ctx context.Context, app core.App, client apiClient) error {
 			unmatched = append(unmatched, scorer.TeamName)
 			continue
 		}
-		providerKey := fmt.Sprintf("api:%d", scorer.ProviderID)
+		providerKey := scorerProviderKey(scorer, source)
 		existing, _ := app.FindFirstRecordByFilter(collectionName, "providerKey = {:key}", map[string]any{"key": providerKey})
 		if existing == nil {
 			existing, _ = findByPlayerTeam(app, scorer.Name, teamRecord.Id)
@@ -367,10 +453,14 @@ func Sync(ctx context.Context, app core.App, client apiClient) error {
 			record = core.NewRecord(collection)
 		}
 		record.Set("providerKey", providerKey)
-		record.Set("providerId", scorer.ProviderID)
+		if scorer.ProviderID > 0 {
+			record.Set("providerId", scorer.ProviderID)
+		}
 		record.Set("name", scorer.Name)
 		record.Set("team", teamRecord.Id)
-		record.Set("photoUrl", scorer.PhotoURL)
+		if scorer.PhotoURL != "" {
+			record.Set("photoUrl", scorer.PhotoURL)
+		}
 		record.Set("goals", scorer.Goals)
 		record.Set("assists", scorer.Assists)
 		record.Set("rank", scorer.Rank)
@@ -388,7 +478,7 @@ func Sync(ctx context.Context, app core.App, client apiClient) error {
 		// reports success and an unmapped country name doesn't error every 6h.
 		log.Printf("[topscorer] sync: %d top-scorer teams were not mapped: %s", len(unmatched), strings.Join(uniqueStrings(unmatched), ", "))
 	}
-	log.Printf("[topscorer] sync done: %d updated, %d unmatched", updated, len(unmatched))
+	log.Printf("[topscorer] sync done via %s: %d updated, %d unmatched", sourceLabel(source), updated, len(unmatched))
 	return nil
 }
 
@@ -405,6 +495,7 @@ func ForecastPayload(app core.App) (ForecastData, error) {
 		Shortlist: shortlist,
 		Leaders:   leaders,
 		UpdatedAt: latestSync(append(shortlist, leaders...)),
+		Source:    displaySource(shortlist, leaders),
 	}, nil
 }
 
@@ -642,7 +733,7 @@ func LeagueTableFor(app core.App, leagueID string) (LeagueTable, error) {
 	for _, player := range players {
 		flat = append(flat, player.Player)
 	}
-	return LeagueTable{Players: players, UpdatedAt: latestSync(flat)}, nil
+	return LeagueTable{Players: players, UpdatedAt: latestSync(flat), Source: displaySource(flat, nil)}, nil
 }
 
 func IsEligible(app core.App, playerID string) bool {
@@ -698,6 +789,7 @@ func view(app core.App, record *core.Record) Player {
 		Eligible: record.GetBool("eligible"),
 		Seeded:   record.GetBool("seeded"),
 		SyncedAt: syncedAt,
+		Source:   playerSource(record),
 	}
 }
 
@@ -743,6 +835,12 @@ func teamsByCanon(app core.App) (map[string]*core.Record, error) {
 	indexed := map[string]*core.Record{}
 	for _, teamRecord := range teams {
 		indexed[canonTeam(teamRecord.GetString("name"))] = teamRecord
+		if code := strings.TrimSpace(teamRecord.GetString("fifaCode")); code != "" {
+			indexed[canonTeam(code)] = teamRecord
+		}
+		if chinese := teamChineseAliases[strings.ToUpper(strings.TrimSpace(teamRecord.GetString("fifaCode")))]; chinese != "" {
+			indexed[canonTeam(chinese)] = teamRecord
+		}
 	}
 	return indexed, nil
 }
@@ -845,7 +943,60 @@ func latestSync(players []Player) string {
 	return latest.UTC().Format(time.RFC3339)
 }
 
+func scorerProviderKey(scorer football.TopScorer, source string) string {
+	if source == fallbackSource || scorer.ProviderID <= 0 {
+		return "dqd:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
+	}
+	return fmt.Sprintf("api:%d", scorer.ProviderID)
+}
+
+func playerSource(record *core.Record) string {
+	return sourceLabel(sourceFromProviderKey(record.GetString("providerKey")))
+}
+
+func sourceFromProviderKey(providerKey string) string {
+	if strings.HasPrefix(providerKey, "dqd:") {
+		return fallbackSource
+	}
+	if strings.HasPrefix(providerKey, "api:") {
+		return "api-football"
+	}
+	return ""
+}
+
+func sourceLabel(source string) string {
+	switch source {
+	case fallbackSource:
+		return dongqiudiSourceLabel
+	case "api-football":
+		return "API-Football"
+	default:
+		return "manual"
+	}
+}
+
+func displaySource(groups ...[]Player) string {
+	for _, players := range groups {
+		for _, player := range players {
+			if player.Goals > 0 && player.Source != "" {
+				return player.Source
+			}
+		}
+	}
+	for _, players := range groups {
+		for _, player := range players {
+			if player.Source != "" {
+				return player.Source
+			}
+		}
+	}
+	return ""
+}
+
 func canonTeam(name string) string {
+	if normalizedChinese := normalizeChineseTeamName(name); normalizedChinese != "" {
+		return normalizedChinese
+	}
 	normalized := football.NormalizeName(name)
 	if alias, ok := teamAliases[normalized]; ok {
 		return alias
@@ -853,15 +1004,44 @@ func canonTeam(name string) string {
 	return normalized
 }
 
+func normalizeChineseTeamName(name string) string {
+	var builder strings.Builder
+	for _, character := range strings.TrimSpace(name) {
+		switch character {
+		case ' ', '\t', '\n', '\r', '（', '）', '(', ')':
+			continue
+		default:
+			if character > unicode.MaxASCII {
+				builder.WriteRune(character)
+			}
+		}
+	}
+	return builder.String()
+}
+
 func canonPlayer(name string) string {
 	normalized := accentReplacer.Replace(name)
 	var builder strings.Builder
 	for _, character := range strings.ToLower(normalized) {
-		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') {
+		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || (character > unicode.MaxASCII && (unicode.IsLetter(character) || unicode.IsDigit(character))) {
 			builder.WriteRune(character)
 		}
 	}
 	return builder.String()
+}
+
+func cleanupLegacyDongqiudiKeys(app core.App) {
+	records, err := app.FindRecordsByFilter(collectionName, "providerKey ~ {:key}", "", 0, 0, map[string]any{"key": "dqd::"})
+	if err != nil {
+		return
+	}
+	for _, record := range records {
+		if strings.HasPrefix(record.GetString("providerKey"), "dqd::") {
+			if err := app.Delete(record); err != nil {
+				log.Printf("[topscorer] cleanup legacy dongqiudi key %s: %v", record.Id, err)
+			}
+		}
+	}
 }
 
 func manualProviderKey(playerName, teamName string) string {

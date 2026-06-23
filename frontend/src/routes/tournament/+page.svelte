@@ -241,7 +241,12 @@
 {:else if view === 'topscorer'}
 	<section class="card gb-live">
 		<div class="gb-live-head">
-			<p class="muted small">{language.text('Den offisielle toppscorertabellen.', 'Den offisielle toppscorartabellen.', 'The official Golden Boot standings.')}</p>
+			<p class="muted small">
+				{language.text('Den offisielle toppscorertabellen.', 'Den offisielle toppscorartabellen.', 'The official Golden Boot standings.')}
+				{#if fs.goldenBoot.source}
+					<span class="source-pill">{language.text('Kilde', 'Kjelde', 'Source')}: {fs.goldenBoot.source}</span>
+				{/if}
+			</p>
 			{#if fs.goldenBoot.updatedAt}
 				<p class="muted gb-updated">{language.text('Sist', 'Sist', 'Updated')} {updatedAt(fs.goldenBoot.updatedAt)}</p>
 			{/if}
@@ -327,6 +332,18 @@
 	}
 	.gb-live-head .small {
 		margin: 0;
+	}
+	.source-pill {
+		display: inline-flex;
+		align-items: center;
+		margin-left: 0.4rem;
+		padding: 0.12rem 0.42rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--muted);
+		font-size: 0.68rem;
+		font-weight: 700;
 	}
 	.gb-updated {
 		text-align: right;
