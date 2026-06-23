@@ -571,6 +571,12 @@
 		gap: 1rem;
 		margin-bottom: 1rem;
 		padding: 1rem;
+		min-width: 0;
+		overflow: hidden;
+	}
+	.ko-toolbar > div:first-child {
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.ko-toolbar h2 {
 		font-size: 1.25rem;
@@ -580,10 +586,17 @@
 		margin: 0;
 		max-width: 44rem;
 		font-size: 0.86rem;
+		line-height: 1.45;
 	}
 	.ko-seg {
-		flex: none;
+		flex: 0 0 auto;
+		width: auto;
+		max-width: min(100%, 24rem);
 		margin: 0;
+		overflow-x: visible;
+	}
+	.ko-seg button {
+		flex: 0 0 auto;
 	}
 	.classic-hint {
 		margin: 0 0 0.55rem;
@@ -591,16 +604,19 @@
 	}
 	.classic-shell {
 		position: relative;
+		max-width: 100%;
 		padding: 1rem;
 		overflow-x: auto;
 		overflow-y: hidden;
 		scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent;
 		-webkit-overflow-scrolling: touch;
+		overscroll-behavior-x: contain;
 	}
 	.classic-bracket {
 		display: grid;
 		grid-template-columns: repeat(var(--rounds), minmax(13.5rem, 1fr));
 		gap: 1.25rem;
+		width: max-content;
 		min-width: 72rem;
 		align-items: stretch;
 	}
@@ -769,9 +785,15 @@
 		.ko-toolbar {
 			align-items: stretch;
 			flex-direction: column;
+			overflow: visible;
 		}
 		.ko-seg {
 			width: 100%;
+			max-width: none;
+			overflow-x: auto;
+		}
+		.ko-seg button {
+			flex: 1 1 0;
 		}
 		.classic-shell {
 			margin: 0 -1rem;
@@ -790,6 +812,14 @@
 		.mini-third {
 			width: 100%;
 			justify-content: space-between;
+		}
+	}
+	@media (max-width: 430px) {
+		.ko-seg {
+			flex-direction: column;
+		}
+		.ko-seg button {
+			width: 100%;
 		}
 	}
 
