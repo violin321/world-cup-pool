@@ -204,6 +204,57 @@
 		return fallback || language.text('Ikke klar', 'Ikkje klar', 'TBD');
 	}
 
+	function stageMatches(stage: string) {
+		return classicBracket.find((col) => col.stage === stage)?.matches ?? [];
+	}
+
+	function mobileTreeTop(index: number, total: number) {
+		if (total <= 1) return 50;
+		return 8 + (index * 84) / (total - 1);
+	}
+
+	function mobileTreeSlots(stage: string, side: 'left' | 'right') {
+		const matches = stageMatches(stage);
+		const half = Math.ceil(matches.length / 2);
+		const sideMatches = side === 'left' ? matches.slice(0, half) : matches.slice(half);
+		return sideMatches.map((match, index) => ({
+			match,
+			top: mobileTreeTop(index, sideMatches.length)
+		}));
+	}
+
+	function mobileTreeConnectorPath(side: 'left' | 'right') {
+		const r32 = mobileTreeSlots('R32', side);
+		const r16 = mobileTreeSlots('R16', side);
+		const qf = mobileTreeSlots('QF', side);
+		const sf = mobileTreeSlots('SF', side);
+		const xs = side === 'left'
+			? { r32: 8, r16: 27, qf: 45, sf: 63, final: 50 }
+			: { r32: 92, r16: 73, qf: 55, sf: 37, final: 50 };
+		const parts: string[] = [];
+		const connect = (from: { top: number }[], to: { top: number }[], fromX: number, toX: number) => {
+			if (!from.length || !to.length) return;
+			from.forEach((slot, index) => {
+				const target = to[Math.min(Math.floor(index / 2), to.length - 1)];
+				const mid = (fromX + toX) / 2;
+				parts.push(`M ${fromX} ${slot.top} H ${mid} V ${target.top} H ${toX}`);
+			});
+		};
+
+		connect(r32, r16, xs.r32, xs.r16);
+		connect(r16, qf, xs.r16, xs.qf);
+		connect(qf, sf, xs.qf, xs.sf);
+		sf.forEach((slot) => {
+			const mid = (xs.sf + xs.final) / 2;
+			parts.push(`M ${xs.sf} ${slot.top} H ${mid} V 50 H ${xs.final}`);
+		});
+		return parts.join(' ');
+	}
+
+	function mobileTreeClass(stage: string, side?: 'left' | 'right') {
+		return `mobile-tree-node mobile-stage-${stage.toLowerCase()}${side ? ` mobile-${side}` : ''}`;
+	}
+
 	function initials(name: string) {
 		const parts = name.split(/\s+/).filter(Boolean);
 		if (parts.length <= 1) return [...name].slice(0, 2).join('').toUpperCase();
@@ -343,14 +394,67 @@
 		<div class="classic-actions">
 			<div class="classic-hint muted">
 				{language.text(
-					'Sveip sidelengs for forhåndsvisning, eller åpne hele treet i stor visning.',
-					'Sveip sidelengs for førehandsvising, eller opne heile treet i stor vising.',
+					'Sveip i forhåndsvisningen, eller åpne hele treet i stor visning.',
+					'Sveip i førehandsvisinga, eller opne heile treet i stor vising.',
 					'Swipe sideways for preview, or open the full bracket in a larger view.'
 				)}
 			</div>
 			<button class="zoom-open" type="button" onclick={openBracketZoom}>
 				{language.text('Åpne stort tre', 'Opne stort tre', 'View full bracket')}
 			</button>
+		</div>
+		<div class="mobile-tree-shell card" aria-label={language.text('Mobilvennlig turneringstre', 'Mobilvenleg turneringstre', 'Mobile tournament tree')}>
+			<div class="mobile-tree">
+				<svg class="mobile-tree-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+					<path d={mobileTreeConnectorPath('left')} />
+					<path d={mobileTreeConnectorPath('right')} />
+				</svg>
+				<div class="mobile-tree-final">
+					<span class="round-kicker">{stageShort('FINAL')}</span>
+					{#if stageMatches('FINAL')[0]}
+						{@const finalMatch = stageMatches('FINAL')[0]}
+						{@const H = tn(finalMatch.homeTeam)}
+						{@const A = tn(finalMatch.awayTeam)}
+						{@const done = played(finalMatch)}
+						<article class="mobile-final-card" class:live={tipsStore.liveMatchIds.has(finalMatch.id)}>
+							<div class="mobile-final-vs">VS</div>
+							<div class="mobile-final-teams">
+								<span class:won={done && finalMatch.advancer === finalMatch.homeTeam}>{teamCode(H, finalMatch.homeLabel)}</span>
+								<b>{#if done}{scoreText(finalMatch)}{:else}{kickoffText(finalMatch.kickoff)}{/if}</b>
+								<span class:won={done && finalMatch.advancer === finalMatch.awayTeam}>{teamCode(A, finalMatch.awayLabel)}</span>
+							</div>
+						</article>
+					{/if}
+				</div>
+				{#each ['R32', 'R16', 'QF', 'SF'] as stage (stage)}
+					{#each mobileTreeSlots(stage, 'left') as slot (slot.match.id)}
+						{@const m = slot.match}
+						{@const H = tn(m.homeTeam)}
+						{@const A = tn(m.awayTeam)}
+						{@const done = played(m)}
+						<article class={mobileTreeClass(stage, 'left')} style={`--top: ${slot.top}%`}>
+							<span class="mobile-node-round">{stageShort(stage)}</span>
+							<div class="mobile-node-teams">
+								<span class:won={done && m.advancer === m.homeTeam}>{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{:else}<i>{teamCode(H, m.homeLabel)}</i>{/if}<b>{teamSeedLabel(H, m.homeLabel)}</b></span>
+								<span class:won={done && m.advancer === m.awayTeam}>{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{:else}<i>{teamCode(A, m.awayLabel)}</i>{/if}<b>{teamSeedLabel(A, m.awayLabel)}</b></span>
+							</div>
+						</article>
+					{/each}
+					{#each mobileTreeSlots(stage, 'right') as slot (slot.match.id)}
+						{@const m = slot.match}
+						{@const H = tn(m.homeTeam)}
+						{@const A = tn(m.awayTeam)}
+						{@const done = played(m)}
+						<article class={mobileTreeClass(stage, 'right')} style={`--top: ${slot.top}%`}>
+							<span class="mobile-node-round">{stageShort(stage)}</span>
+							<div class="mobile-node-teams">
+								<span class:won={done && m.advancer === m.homeTeam}><b>{teamSeedLabel(H, m.homeLabel)}</b>{#if H}<Flag iso2={H.iso2} code={H.fifaCode} />{:else}<i>{teamCode(H, m.homeLabel)}</i>{/if}</span>
+								<span class:won={done && m.advancer === m.awayTeam}><b>{teamSeedLabel(A, m.awayLabel)}</b>{#if A}<Flag iso2={A.iso2} code={A.fifaCode} />{:else}<i>{teamCode(A, m.awayLabel)}</i>{/if}</span>
+							</div>
+						</article>
+					{/each}
+				{/each}
+			</div>
 		</div>
 		<div class="classic-shell card" aria-label={language.text('Forhåndsvisning av klassisk turneringstre', 'Førehandsvising av klassisk turneringstre', 'Classic bracket preview')}>
 			<div class="classic-bracket" style={`--rounds: ${classicBracket.length}`}>
@@ -705,6 +809,180 @@
 		-webkit-overflow-scrolling: touch;
 		overscroll-behavior-x: contain;
 	}
+	.mobile-tree-shell {
+		display: none;
+		position: relative;
+		overflow-x: auto;
+		overflow-y: hidden;
+		padding: 0.75rem;
+		background:
+			radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
+			linear-gradient(180deg, color-mix(in srgb, #05070d 76%, var(--surface)), color-mix(in srgb, #070b14 80%, var(--surface)));
+		-webkit-overflow-scrolling: touch;
+		scrollbar-color: color-mix(in srgb, var(--accent) 35%, transparent) transparent;
+	}
+	.mobile-tree {
+		position: relative;
+		isolation: isolate;
+		width: min(100%, 25rem);
+		min-width: 21.5rem;
+		height: clamp(36rem, 148vw, 41rem);
+		margin: 0 auto;
+		border-radius: 24px;
+		background:
+			radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 22%),
+			linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.035));
+	}
+	.mobile-tree::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		background-image:
+			linear-gradient(color-mix(in srgb, var(--border) 26%, transparent) 1px, transparent 1px),
+			linear-gradient(90deg, color-mix(in srgb, var(--border) 18%, transparent) 1px, transparent 1px);
+		background-size: 100% 12.5%, 12.5% 100%;
+		mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+		opacity: 0.34;
+		pointer-events: none;
+	}
+	.mobile-tree-lines {
+		position: absolute;
+		inset: 0.7rem 0.25rem;
+		z-index: 0;
+		width: calc(100% - 0.5rem);
+		height: calc(100% - 1.4rem);
+		overflow: visible;
+	}
+	.mobile-tree-lines path {
+		fill: none;
+		stroke: color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.38));
+		stroke-width: 0.26;
+		stroke-linejoin: round;
+		stroke-linecap: round;
+		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 32%, transparent));
+		vector-effect: non-scaling-stroke;
+	}
+	.mobile-tree-final {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		gap: 0.35rem;
+		width: 8.8rem;
+		transform: translate(-50%, -50%);
+		text-align: center;
+	}
+	.mobile-final-card {
+		width: 100%;
+		padding: 0.55rem;
+		border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+		border-radius: 20px;
+		background:
+			radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 54%),
+			color-mix(in srgb, var(--surface-2) 78%, #05070d);
+		box-shadow: 0 18px 44px -28px #000, 0 0 0 5px color-mix(in srgb, var(--accent) 7%, transparent);
+	}
+	.mobile-final-vs {
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		font-weight: 900;
+		letter-spacing: 0.12em;
+		color: var(--accent);
+		text-shadow: 0 0 16px color-mix(in srgb, var(--accent) 42%, transparent);
+	}
+	.mobile-final-teams {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.2rem;
+		font-size: 0.65rem;
+		font-weight: 900;
+		letter-spacing: 0.05em;
+	}
+	.mobile-final-teams b {
+		color: var(--muted);
+		font-size: 0.55rem;
+		letter-spacing: 0;
+	}
+	.mobile-tree-node {
+		position: absolute;
+		top: var(--top);
+		z-index: 2;
+		display: grid;
+		gap: 0.12rem;
+		width: var(--node-w, 4.8rem);
+		min-height: 2.8rem;
+		padding: 0.22rem;
+		border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+		border-radius: 14px;
+		background: color-mix(in srgb, var(--surface-2) 74%, #05070d);
+		box-shadow: 0 12px 24px -22px #000;
+		transform: translateY(-50%);
+	}
+	.mobile-left { left: var(--left-x); }
+	.mobile-right { right: var(--right-x); }
+	.mobile-stage-r32 { --left-x: 0.05rem; --right-x: 0.05rem; --node-w: 3.35rem; }
+	.mobile-stage-r16 { --left-x: 18%; --right-x: 18%; --node-w: 3.65rem; }
+	.mobile-stage-qf { --left-x: 36%; --right-x: 36%; --node-w: 4rem; }
+	.mobile-stage-sf { --left-x: 54%; --right-x: 54%; --node-w: 4.35rem; }
+	.mobile-node-round {
+		color: var(--accent);
+		font-size: 0.48rem;
+		font-weight: 900;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+	.mobile-right .mobile-node-round { text-align: right; }
+	.mobile-node-teams {
+		display: grid;
+		gap: 0.12rem;
+	}
+	.mobile-node-teams span {
+		display: flex;
+		align-items: center;
+		gap: 0.18rem;
+		min-width: 0;
+		font-size: 0.56rem;
+		font-weight: 850;
+		line-height: 1.05;
+		color: color-mix(in srgb, var(--text) 82%, var(--muted));
+	}
+	.mobile-right .mobile-node-teams span { justify-content: flex-end; }
+	.mobile-node-teams b {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		min-width: 0;
+	}
+	.mobile-node-teams :global(.flag),
+	.mobile-node-teams :global(img) {
+		flex: 0 0 auto;
+		width: 1rem;
+		height: 1rem;
+		border-radius: 999px;
+	}
+	.mobile-node-teams i {
+		display: grid;
+		place-items: center;
+		flex: 0 0 auto;
+		width: 1rem;
+		height: 1rem;
+		border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface-3) 80%, transparent);
+		color: var(--muted);
+		font-size: 0.42rem;
+		font-style: normal;
+		font-weight: 900;
+	}
+	.mobile-node-teams .won,
+	.mobile-final-teams .won {
+		color: var(--accent);
+	}
 	.classic-bracket {
 		display: grid;
 		grid-template-columns: repeat(var(--rounds), minmax(13.5rem, 1fr));
@@ -987,11 +1265,19 @@
 			font-size: 0.9rem;
 		}
 		.classic-shell {
+			display: none;
 			margin: 0 -1rem;
 			border-left: 0;
 			border-right: 0;
 			border-radius: 0;
 			padding: 0.85rem 1rem;
+		}
+		.mobile-tree-shell {
+			display: block;
+			margin: 0 -1rem;
+			border-left: 0;
+			border-right: 0;
+			border-radius: 0;
 		}
 		.classic-bracket {
 			grid-template-columns: repeat(var(--rounds), 15rem);
@@ -1009,6 +1295,21 @@
 			grid-template-columns: repeat(var(--rounds), 17rem);
 			gap: 1.8rem;
 			min-width: 93rem;
+		}
+		.bracket-overlay-body .mobile-tree-shell {
+			display: block;
+			margin: 0;
+			border: 0;
+			border-radius: 18px;
+			min-width: min(100%, 24rem);
+		}
+		.bracket-overlay-body .classic-bracket-large {
+			display: none;
+		}
+		.mobile-tree-large {
+			width: 24rem;
+			min-width: 24rem;
+			height: 41rem;
 		}
 		.third-strip {
 			align-items: flex-start;
@@ -1033,6 +1334,29 @@
 		.classic-bracket-large {
 			grid-template-columns: repeat(var(--rounds), 16.25rem);
 			min-width: 89rem;
+		}
+		.mobile-tree-shell {
+			padding: 0.55rem 0.35rem;
+		}
+		.mobile-tree {
+			width: 23.25rem;
+			min-width: 23.25rem;
+			height: 39rem;
+		}
+		.mobile-stage-r32 { --node-w: 3.2rem; }
+		.mobile-stage-r16 { --left-x: 17.5%; --right-x: 17.5%; --node-w: 3.48rem; }
+		.mobile-stage-qf { --left-x: 35.6%; --right-x: 35.6%; --node-w: 3.82rem; }
+		.mobile-stage-sf { --left-x: 53.4%; --right-x: 53.4%; --node-w: 4.08rem; }
+		.mobile-tree-final {
+			width: 8rem;
+		}
+		.mobile-final-vs {
+			font-size: 1.18rem;
+		}
+	}
+	@media (min-width: 761px) {
+		.bracket-overlay-body .mobile-tree-shell {
+			display: none;
 		}
 	}
 
