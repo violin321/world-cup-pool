@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { language } from '$lib/language.svelte';
+	import { teamDisplayName } from '$lib/teamNames';
 	import { tipsStore, type Match } from '$lib/tips.svelte';
 	import { groupTable, type StandRow } from '$lib/standings';
 	import Flag from './Flag.svelte';
@@ -57,7 +58,7 @@
 										iso2={tipsStore.team(row.id)?.iso2 ?? ''}
 										code={tipsStore.team(row.id)?.fifaCode ?? ''}
 									/>
-									<span class="nm">{tipsStore.team(row.id)?.name ?? row.id}</span>
+									<span class="nm">{teamDisplayName(tipsStore.team(row.id), row.id)}</span>
 								</span>
 							</td>
 							<td>{row.pld}</td>

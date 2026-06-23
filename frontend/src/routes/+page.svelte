@@ -519,6 +519,7 @@
 		return `${language.text('Ditt tips', 'Ditt tips', 'Your tip')}: ${tip.ftHome}-${tip.ftAway}`;
 	}
 	function matchTipsMissingText(count: number) {
+		if (language.isChinese) return `还有 ${count} 场比赛预测未提交`;
 		return language.text(
 			`${count} kamptips mangler`,
 			`${count} kamptips manglar`,
@@ -558,6 +559,7 @@
 	}
 	function shortPoints(points: number, signed = false) {
 		const prefix = signed && points > 0 ? '+' : '';
+		if (language.isChinese) return `${prefix}${points} 分`;
 		return language.text(`${prefix}${points} p`, `${prefix}${points} p`, `${prefix}${points} pts`);
 	}
 	function medalForRank(rank: number) {
@@ -1292,8 +1294,8 @@
 		{#if tipsStore.loaded && totalMatches > 0 && missingMatchTips.length > 0}
 			<div class="tip-progress-panel" style={`--tip-progress: ${progressPct}%`}>
 				<div class="tip-progress-info">
-					<span><b>{submittedOpenMatchTipCount}</b> {language.text(`av ${openMatchTipCount} åpne kamper levert`, `av ${openMatchTipCount} opne kampar leverte`, `of ${openMatchTipCount} open matches submitted`)}</span>
-					<span class="muted">{language.text(`${missingMatchTips.length} mangler`, `${missingMatchTips.length} manglar`, `${missingMatchTips.length} missing`)}</span>
+					<span><b>{submittedOpenMatchTipCount}</b> {language.isChinese ? `/${openMatchTipCount} 场可预测比赛已提交` : language.text(`av ${openMatchTipCount} åpne kamper levert`, `av ${openMatchTipCount} opne kampar leverte`, `of ${openMatchTipCount} open matches submitted`)}</span>
+					<span class="muted">{language.isChinese ? `还有 ${missingMatchTips.length} 场未提交` : language.text(`${missingMatchTips.length} mangler`, `${missingMatchTips.length} manglar`, `${missingMatchTips.length} missing`)}</span>
 				</div>
 				<div class="tip-progress-track" aria-hidden="true">
 					<span></span>
@@ -1608,11 +1610,11 @@
 										size={18}
 									/>
 								{/if}
-								<b>{team(m.homeTeam)?.fifaCode ?? m.homeLabel}</b>
+								<b>{teamLabel(m, 'h')}</b>
 							</span>
 							<span class="score digits">{scoreText(m)}</span>
 							<span class="side r">
-								<b>{team(m.awayTeam)?.fifaCode ?? m.awayLabel}</b>
+								<b>{teamLabel(m, 'a')}</b>
 								{#if team(m.awayTeam)}
 									<Flag
 										iso2={team(m.awayTeam)?.iso2 ?? ''}

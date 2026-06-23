@@ -41,6 +41,7 @@ export function stageName(stage: string) {
 
 export function matchStageLabel(match: { stage: string; groupLetter?: string }) {
 	if (match.stage === 'group') {
+		if (language.isChinese) return `小组赛 · 小组 ${match.groupLetter ?? ''}`;
 		return `${language.text('Gruppespill', 'Gruppespel', 'Group stage')} · ${language.text('Gruppe', 'Gruppe', 'Group')} ${match.groupLetter ?? ''}`;
 	}
 	return stageName(match.stage);

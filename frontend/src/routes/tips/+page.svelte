@@ -295,7 +295,9 @@
 			</p>
 			{#if tipsStore.loaded && missingOpenMatches.length > 0}
 				<p class="muted statusline">
-					{language.text(
+					{language.isChinese
+						? `还有 ${missingOpenMatches.length} 场可预测比赛未提交 · 下一截止 ${deadlineLabel(nextMissingMatch.kickoff)}`
+						: language.text(
 						`${missingOpenMatches.length} ${missingOpenMatches.length === 1 ? 'åpen kamp' : 'åpne kamper'} mangler · neste frist ${deadlineLabel(nextMissingMatch.kickoff)}`,
 						`${missingOpenMatches.length} ${missingOpenMatches.length === 1 ? 'open kamp' : 'opne kampar'} manglar · neste frist ${deadlineLabel(nextMissingMatch.kickoff)}`,
 						`${missingOpenMatches.length} open match${missingOpenMatches.length === 1 ? '' : 'es'} missing · next deadline ${deadlineLabel(nextMissingMatch.kickoff)}`

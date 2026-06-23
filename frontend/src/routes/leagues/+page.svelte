@@ -71,6 +71,7 @@
 	}
 
 	function unreadChatLabel(count: number) {
+		if (language.isChinese) return count === 1 ? '新聊天' : `${count} 条新聊天`;
 		return count === 1
 			? language.text('Ny chat', 'Ny chat', 'New chat')
 			: language.text(`${count} nye chatter`, `${count} nye chattar`, `${count} new chats`);
@@ -124,7 +125,7 @@
 							<i>{roleLabel(league)}</i>
 						</span>
 						<span class="league-meta">
-							<span><Users size={14} /> {league.members} {language.text(league.members === 1 ? 'medlem' : 'medlemmer', league.members === 1 ? 'medlem' : 'medlemer', league.members === 1 ? 'member' : 'members')}</span>
+							<span><Users size={14} /> {league.members} {language.isChinese ? '名成员' : language.text(league.members === 1 ? 'medlem' : 'medlemmer', league.members === 1 ? 'medlem' : 'medlemer', league.members === 1 ? 'member' : 'members')}</span>
 							{#if league.inviteCode && league.inviteCode !== 'GLOBAL'}
 								<span>{language.text('Kode', 'Kode', 'Code')} {league.inviteCode}</span>
 							{:else if league.private}
@@ -174,7 +175,7 @@
 			<div class="field">
 				<input
 					class="input code"
-					placeholder="INVITE CODE"
+					placeholder={language.isChinese ? '邀请码' : 'INVITE CODE'}
 					bind:value={joinCode}
 					required
 				/>

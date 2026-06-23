@@ -37,7 +37,11 @@
 				createAccount: 'Opprett konto',
 				appPreview: 'Appvisning',
 				nextDeadline: 'Neste frist',
+				brazil: 'Brasil',
 				norway: 'Norge',
+				germany: 'Tyskland',
+				mexico: 'Mexico',
+				japan: 'Japan',
 				outcome: 'utfall',
 				exact: 'eksakt',
 				goals: 'mål',
@@ -76,7 +80,11 @@
 				createAccount: 'Opprett konto',
 				appPreview: 'Appvising',
 				nextDeadline: 'Neste frist',
+				brazil: 'Brasil',
 				norway: 'Noreg',
+				germany: 'Tyskland',
+				mexico: 'Mexico',
+				japan: 'Japan',
 				outcome: 'utfall',
 				exact: 'eksakt',
 				goals: 'mål',
@@ -115,7 +123,11 @@
 				createAccount: 'Create account',
 				appPreview: 'App preview',
 				nextDeadline: 'Next deadline',
+				brazil: 'Brazil',
 				norway: 'Norway',
+				germany: 'Germany',
+				mexico: 'Mexico',
+				japan: 'Japan',
 				outcome: 'outcome',
 				exact: 'exact',
 				goals: 'goals',
@@ -232,7 +244,7 @@
 					<span class="digits">21:00</span>
 				</div>
 				<div class="match-row">
-					<span><Flag iso2="br" code="BRA" size={22} /> Brasil</span>
+				<span><Flag iso2="br" code="BRA" size={22} /> {copy.brazil}</span>
 					<strong class="digits">2-1</strong>
 					<span class="right">{copy.norway} <Flag iso2="no" code="NOR" size={22} /></span>
 				</div>
@@ -261,9 +273,9 @@
 						<thead><tr><th>#</th><th>{copy.team}</th><th>P</th><th>GD</th><th>Pts</th></tr></thead>
 						<tbody>
 							<tr><td>1</td><td><Flag iso2="no" code="NOR" size={17} /> {copy.norway}</td><td>3</td><td>+4</td><td>7</td></tr>
-							<tr><td>2</td><td><Flag iso2="de" code="GER" size={17} /> Tyskland</td><td>3</td><td>+2</td><td>6</td></tr>
-							<tr><td>3</td><td><Flag iso2="mx" code="MEX" size={17} /> Mexico</td><td>3</td><td>0</td><td>4</td></tr>
-							<tr><td>4</td><td><Flag iso2="jp" code="JPN" size={17} /> Japan</td><td>3</td><td>-6</td><td>0</td></tr>
+							<tr><td>2</td><td><Flag iso2="de" code="GER" size={17} /> {copy.germany}</td><td>3</td><td>+2</td><td>6</td></tr>
+							<tr><td>3</td><td><Flag iso2="mx" code="MEX" size={17} /> {copy.mexico}</td><td>3</td><td>0</td><td>4</td></tr>
+							<tr><td>4</td><td><Flag iso2="jp" code="JPN" size={17} /> {copy.japan}</td><td>3</td><td>-6</td><td>0</td></tr>
 						</tbody>
 					</table>
 				</article>

@@ -60,7 +60,7 @@
 	]);
 
 	let matchPoints = $derived.by(() => [
-		{ label: language.text('Rett utfall', 'Rett utfall', 'Correct outcome'), value: '3', detail: language.text('1/X/2 i gruppespill, laget som går videre i sluttspill', '1/X/2 i gruppespel, laget som går vidare i sluttspel', '1/X/2 in group stage, the team that advances in knockout') },
+		{ label: language.text('Rett utfall', 'Rett utfall', 'Correct outcome'), value: '3', detail: language.text('1/X/2 i gruppespill, laget som går videre i sluttspill', '1/X/2 i gruppespel, laget som går vidare i sluttspel', '1/X/2 in group stage; in knockout, picking the advancing team counts as the correct outcome') },
 		{ label: language.text('Eksakt resultat', 'Eksakt resultat', 'Exact score'), value: '+1', detail: language.text('samme resultat som sluttresultatet', 'same resultat som sluttresultatet', 'same score as the final result') },
 		{ label: language.text('Totalt mål', 'Totalt mål', 'Total goals'), value: '+1', detail: language.text('for eksempel teller både 2-1 og 3-0 som 3 mål', 'til dømes tel både 2-1 og 3-0 som 3 mål', 'for example 2-1 and 3-0 both count as 3 goals') },
 		{ label: language.text('Rett målforskjell', 'Rett målforskjell', 'Correct goal difference'), value: '+1', detail: language.text('for eksempel ettmålsseier eller uavgjort', 'til dømes eittmålsiger eller uavgjort', 'for example a one-goal win or a draw') }
