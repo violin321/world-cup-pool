@@ -82,6 +82,7 @@ func main() {
 		admin.Register(e.App, e)
 		account.RegisterStats(e.App, e)
 		account.RegisterPublicStats(e.App, e)
+		oauth.RegisterPublicConfig(e)
 		oauth.Register(e.App)
 		wmsync.Register(e.App, e)
 		wmOdds.Register(e.App, e)
