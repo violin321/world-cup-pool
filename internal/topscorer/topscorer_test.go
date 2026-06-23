@@ -187,6 +187,46 @@ func TestScorerTeamFromDongqiudiProviderKey(t *testing.T) {
 	}
 }
 
+func TestPlayerCanonCandidatesConnectsCuratedChineseAndEnglish(t *testing.T) {
+	english := playerCanonCandidates("Kylian Mbappé")
+	chinese := playerCanonCandidates("姆巴佩")
+	matched := false
+	for _, left := range english {
+		for _, right := range chinese {
+			if left == right {
+				matched = true
+			}
+		}
+	}
+	if !matched {
+		t.Fatalf("curated aliases did not connect English/Chinese names: %v vs %v", english, chinese)
+	}
+}
+
+func TestShouldUpdateStoredNameKeepsCuratedChineseWhenProviderFallsBackToEnglish(t *testing.T) {
+	if shouldUpdateStoredName("姆巴佩", "Kylian Mbappé") {
+		t.Fatal("known Chinese name should not be overwritten by equivalent English provider name")
+	}
+	if !shouldUpdateStoredName("Kylian Mbappé", "姆巴佩") {
+		t.Fatal("Chinese provider name should replace equivalent English name")
+	}
+	if !shouldUpdateStoredName("旧名", "Unknown Player") {
+		t.Fatal("unknown provider name should still update normally")
+	}
+}
+
+func TestDisplayPlayerNameUsesKnownChineseAliasOnlyForLatinNames(t *testing.T) {
+	if got := displayPlayerNameValue("Kylian Mbappé"); got != "姆巴佩" {
+		t.Fatalf("displayPlayerNameValue() = %q, want 姆巴佩", got)
+	}
+	if got := displayPlayerNameValue("姆巴佩"); got != "姆巴佩" {
+		t.Fatalf("displayPlayerNameValue() changed existing Chinese name to %q", got)
+	}
+	if got := displayPlayerNameValue("Unknown Player"); got != "Unknown Player" {
+		t.Fatalf("displayPlayerNameValue() guessed unknown player as %q", got)
+	}
+}
+
 func TestAggregateOpenfootballTopScorers(t *testing.T) {
 	players := aggregateOpenfootballTopScorers([]openfootballMatch{
 		{

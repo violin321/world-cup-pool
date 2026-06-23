@@ -194,6 +194,18 @@ func TestOpenfootballGoalEventsParsesGoalSummary(t *testing.T) {
 	}
 }
 
+func TestDisplayOpenfootballPlayerNameUsesKnownChineseAlias(t *testing.T) {
+	if got := displayOpenfootballPlayerName("Kylian Mbappé"); got != "姆巴佩" {
+		t.Fatalf("displayOpenfootballPlayerName() = %q, want 姆巴佩", got)
+	}
+	if got := displayOpenfootballPlayerName("未知球员"); got != "未知球员" {
+		t.Fatalf("displayOpenfootballPlayerName() changed existing non-ASCII name to %q", got)
+	}
+	if got := displayOpenfootballPlayerName("Unknown Player"); got != "Unknown Player" {
+		t.Fatalf("displayOpenfootballPlayerName() guessed unknown player as %q", got)
+	}
+}
+
 func TestParseOpenfootballMinute(t *testing.T) {
 	cases := []struct {
 		raw         string

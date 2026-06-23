@@ -232,13 +232,17 @@ const chineseNameAliases: Record<string, string> = {
 	Panama: '巴拿马'
 };
 
+export function teamNameFromFifaCode(fifaCode: string | null | undefined, fallback = '') {
+	const lang = readRuntimeLanguage();
+	const names = lang === 'zh-CN' ? chineseTeamNames : lang === 'en' ? englishTeamNames : norwegianTeamNames;
+	return (fifaCode && names[fifaCode]) || (lang === 'zh-CN' && fallback ? chineseNameAliases[fallback] : '') || fallback;
+}
+
 export function teamDisplayName(
 	team: { name?: string; fifaCode?: string } | null | undefined,
 	fallback = ''
 ) {
 	if (!team) return fallback;
-	const lang = readRuntimeLanguage();
-	const names = lang === 'zh-CN' ? chineseTeamNames : lang === 'en' ? englishTeamNames : norwegianTeamNames;
 	const raw = team.name || fallback;
-	return (team.fifaCode && names[team.fifaCode]) || (lang === 'zh-CN' && raw ? chineseNameAliases[raw] : '') || raw;
+	return teamNameFromFifaCode(team.fifaCode, raw);
 }

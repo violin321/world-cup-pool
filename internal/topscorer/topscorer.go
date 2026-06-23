@@ -156,6 +156,35 @@ var curated = []struct {
 	{Name: "Santiago Giménez", Team: "Mexico", ProviderID: 161861, PhotoURL: "https://media.api-sports.io/football/players/161861.png"},
 }
 
+var curatedNameAliases = map[string]string{
+	canonPlayer("Kylian Mbappé"):     "姆巴佩",
+	canonPlayer("Mbappé"):            "姆巴佩",
+	canonPlayer("Harry Kane"):        "哈里·凯恩",
+	canonPlayer("Kane"):              "哈里·凯恩",
+	canonPlayer("Erling Haaland"):    "哈兰德",
+	canonPlayer("Haaland"):           "哈兰德",
+	canonPlayer("Lionel Messi"):      "梅西",
+	canonPlayer("Messi"):             "梅西",
+	canonPlayer("Cristiano Ronaldo"): "C罗",
+	canonPlayer("Ronaldo"):           "C罗",
+	canonPlayer("Vinícius Júnior"):   "维尼修斯",
+	canonPlayer("Vinicius Junior"):   "维尼修斯",
+	canonPlayer("Lautaro Martínez"):  "劳塔罗·马丁内斯",
+	canonPlayer("Lautaro Martinez"):  "劳塔罗·马丁内斯",
+	canonPlayer("Lamine Yamal"):      "亚马尔",
+	canonPlayer("Jamal Musiala"):     "穆西亚拉",
+	canonPlayer("Santiago Giménez"):  "圣地亚哥·希门尼斯",
+	canonPlayer("Santiago Gimenez"):  "圣地亚哥·希门尼斯",
+}
+
+var curatedNameByChinese = func() map[string]string {
+	aliases := map[string]string{}
+	for englishCanon, chinese := range curatedNameAliases {
+		aliases[canonPlayer(chinese)] = englishCanon
+	}
+	return aliases
+}()
+
 var teamAliases = map[string]string{
 	football.NormalizeName("United States"):                football.NormalizeName("USA"),
 	football.NormalizeName("Korea Republic"):               football.NormalizeName("South Korea"),
@@ -476,15 +505,11 @@ func syncScorers(app core.App, scorers []football.TopScorer, source string) erro
 		if scorer.ProviderID > 0 {
 			record.Set("providerId", scorer.ProviderID)
 		}
-		record.Set("name", scorer.Name)
-		record.Set("team", teamRecord.Id)
-		if scorer.PhotoURL != "" {
-			record.Set("photoUrl", scorer.PhotoURL)
-		} else if record.GetString("photoUrl") == "" {
-			if photoURL := knownPhotoURL(app, scorer); photoURL != "" {
-				record.Set("photoUrl", photoURL)
-			}
+		if shouldUpdateStoredName(record.GetString("name"), scorer.Name) {
+			record.Set("name", scorer.Name)
 		}
+		record.Set("team", teamRecord.Id)
+		mergeScorerPhotoURL(app, record, scorer)
 		record.Set("goals", scorer.Goals)
 		record.Set("assists", scorer.Assists)
 		record.Set("rank", scorer.Rank)
@@ -821,10 +846,8 @@ func view(app core.App, record *core.Record) Player {
 	if teamRecord, err := app.FindRecordById("teams", teamID); err == nil {
 		teamName = teamRecord.GetString("name")
 	}
-	if sourceFromProviderKey(record.GetString("providerKey")) == fallbackSource {
-		if chineseTeam := scorerTeamFromProviderKey(record.GetString("providerKey")); chineseTeam != "" {
-			teamName = chineseTeam
-		}
+	if chineseTeam := teamChineseName(app, teamID, record.GetString("providerKey")); chineseTeam != "" {
+		teamName = chineseTeam
 	}
 	syncedAt := ""
 	if synced := record.GetDateTime("syncedAt").Time(); !synced.IsZero() {
@@ -832,7 +855,7 @@ func view(app core.App, record *core.Record) Player {
 	}
 	return Player{
 		ID:       record.Id,
-		Name:     record.GetString("name"),
+		Name:     displayPlayerName(record),
 		TeamID:   teamID,
 		TeamName: teamName,
 		PhotoURL: record.GetString("photoUrl"),
@@ -903,13 +926,95 @@ func findByPlayerTeam(app core.App, playerName, teamID string) (*core.Record, er
 	if err != nil {
 		return nil, err
 	}
-	want := canonPlayer(playerName)
+	wants := playerCanonCandidates(playerName)
 	for _, record := range records {
-		if canonPlayer(record.GetString("name")) == want {
-			return record, nil
+		for _, want := range wants {
+			for _, existing := range playerCanonCandidates(record.GetString("name")) {
+				if existing == want {
+					return record, nil
+				}
+			}
 		}
 	}
 	return nil, nil
+}
+
+func shouldUpdateStoredName(current, incoming string) bool {
+	current = strings.TrimSpace(current)
+	incoming = strings.TrimSpace(incoming)
+	if incoming == "" {
+		return false
+	}
+	if current == "" {
+		return true
+	}
+	currentIsCJK := containsCJK(current)
+	incomingIsCJK := containsCJK(incoming)
+	if currentIsCJK && !incomingIsCJK && sameKnownPlayer(current, incoming) {
+		return false
+	}
+	if !currentIsCJK && incomingIsCJK {
+		return true
+	}
+	return true
+}
+
+func mergeScorerPhotoURL(app core.App, record *core.Record, scorer football.TopScorer) {
+	current := strings.TrimSpace(record.GetString("photoUrl"))
+	if photoURL := strings.TrimSpace(scorer.PhotoURL); photoURL != "" {
+		record.Set("photoUrl", photoURL)
+		return
+	}
+	if current != "" {
+		return
+	}
+	if photoURL := knownPhotoURL(app, scorer); photoURL != "" {
+		record.Set("photoUrl", photoURL)
+	}
+}
+
+func sameKnownPlayer(first, second string) bool {
+	for _, left := range playerCanonCandidates(first) {
+		for _, right := range playerCanonCandidates(second) {
+			if left == right {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func displayPlayerName(record *core.Record) string {
+	return displayPlayerNameValue(record.GetString("name"))
+}
+
+func displayPlayerNameValue(name string) string {
+	if name == "" || containsCJK(name) {
+		return name
+	}
+	if chinese, ok := curatedNameAliases[canonPlayer(name)]; ok {
+		return chinese
+	}
+	return name
+}
+
+func teamChineseName(app core.App, teamID, providerKey string) string {
+	if sourceFromProviderKey(providerKey) == fallbackSource {
+		if chineseTeam := scorerTeamFromProviderKey(providerKey); chineseTeam != "" {
+			return chineseTeam
+		}
+	}
+	if teamID == "" {
+		return ""
+	}
+	teamRecord, err := app.FindRecordById("teams", teamID)
+	if err != nil {
+		return ""
+	}
+	if chinese := teamChineseAliases[strings.ToUpper(strings.TrimSpace(teamRecord.GetString("fifaCode")))]; chinese != "" {
+		return chinese
+	}
+	return ""
 }
 
 func knownPhotoURL(app core.App, scorer football.TopScorer) string {
@@ -1112,6 +1217,21 @@ func normalizeChineseTeamName(name string) string {
 	return builder.String()
 }
 
+func playerCanonCandidates(name string) []string {
+	primary := canonPlayer(name)
+	if primary == "" {
+		return nil
+	}
+	candidates := []string{primary}
+	if chinese, ok := curatedNameAliases[primary]; ok {
+		candidates = append(candidates, canonPlayer(chinese))
+	}
+	if english, ok := curatedNameByChinese[primary]; ok {
+		candidates = append(candidates, english)
+	}
+	return uniqueStrings(candidates)
+}
+
 func canonPlayer(name string) string {
 	normalized := accentReplacer.Replace(name)
 	var builder strings.Builder
@@ -1121,6 +1241,15 @@ func canonPlayer(name string) string {
 		}
 	}
 	return builder.String()
+}
+
+func containsCJK(value string) bool {
+	for _, character := range value {
+		if unicode.In(character, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			return true
+		}
+	}
+	return false
 }
 
 func cleanupLegacyDongqiudiKeys(app core.App) {

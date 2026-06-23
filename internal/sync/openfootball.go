@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/oyvhov/world-cup-pool/internal/football"
 	"github.com/oyvhov/world-cup-pool/internal/seed"
 )
 
@@ -44,6 +46,27 @@ type ofLiveGoal struct {
 	Minute  string `json:"minute"`
 	Penalty bool   `json:"penalty"`
 	OwnGoal bool   `json:"owngoal"`
+}
+
+var openfootballPlayerChineseAliases = map[string]string{
+	canonOpenfootballPlayer("Kylian Mbappé"):     "姆巴佩",
+	canonOpenfootballPlayer("Mbappé"):            "姆巴佩",
+	canonOpenfootballPlayer("Harry Kane"):        "哈里·凯恩",
+	canonOpenfootballPlayer("Kane"):              "哈里·凯恩",
+	canonOpenfootballPlayer("Erling Haaland"):    "哈兰德",
+	canonOpenfootballPlayer("Haaland"):           "哈兰德",
+	canonOpenfootballPlayer("Lionel Messi"):      "梅西",
+	canonOpenfootballPlayer("Messi"):             "梅西",
+	canonOpenfootballPlayer("Cristiano Ronaldo"): "C罗",
+	canonOpenfootballPlayer("Ronaldo"):           "C罗",
+	canonOpenfootballPlayer("Vinícius Júnior"):   "维尼修斯",
+	canonOpenfootballPlayer("Vinicius Junior"):   "维尼修斯",
+	canonOpenfootballPlayer("Lautaro Martínez"):  "劳塔罗·马丁内斯",
+	canonOpenfootballPlayer("Lautaro Martinez"):  "劳塔罗·马丁内斯",
+	canonOpenfootballPlayer("Lamine Yamal"):      "亚马尔",
+	canonOpenfootballPlayer("Jamal Musiala"):     "穆西亚拉",
+	canonOpenfootballPlayer("Santiago Giménez"):  "圣地亚哥·希门尼斯",
+	canonOpenfootballPlayer("Santiago Gimenez"):  "圣地亚哥·希门尼斯",
 }
 
 func pi(v int) *int { return &v }
@@ -165,7 +188,7 @@ func openfootballGoalEvents(matchID string, m ofLiveMatch) []openfootballGoalEve
 	events := make([]openfootballGoalEvent, 0, len(m.Goals1)+len(m.Goals2))
 	appendGoals := func(scoringTeam string, goals []ofLiveGoal, side string) {
 		for i, goal := range goals {
-			player := strings.TrimSpace(goal.Name)
+			player := displayOpenfootballPlayerName(strings.TrimSpace(goal.Name))
 			if player == "" {
 				continue
 			}
@@ -191,6 +214,36 @@ func openfootballGoalEvents(matchID string, m ofLiveMatch) []openfootballGoalEve
 	appendGoals(m.Team1, m.Goals1, "h")
 	appendGoals(m.Team2, m.Goals2, "a")
 	return events
+}
+
+func displayOpenfootballPlayerName(name string) string {
+	if name == "" || hasCJK(name) {
+		return name
+	}
+	if chinese, ok := openfootballPlayerChineseAliases[canonOpenfootballPlayer(name)]; ok {
+		return chinese
+	}
+	return name
+}
+
+func canonOpenfootballPlayer(name string) string {
+	normalized := football.NormalizeName(name)
+	var builder strings.Builder
+	for _, character := range strings.ToLower(normalized) {
+		if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || (character > unicode.MaxASCII && (unicode.IsLetter(character) || unicode.IsDigit(character))) {
+			builder.WriteRune(character)
+		}
+	}
+	return builder.String()
+}
+
+func hasCJK(value string) bool {
+	for _, character := range value {
+		if unicode.In(character, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			return true
+		}
+	}
+	return false
 }
 
 func openfootballGoalProviderKey(matchID, side string, idx int, goal ofLiveGoal) string {

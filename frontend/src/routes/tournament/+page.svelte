@@ -3,7 +3,7 @@
 	import Flag from '$lib/components/Flag.svelte';
 	import { collapseOnScroll } from '$lib/actions';
 	import { serverClock } from '$lib/serverclock.svelte';
-	import { teamDisplayName } from '$lib/teamNames';
+	import { teamDisplayName, teamNameFromFifaCode } from '$lib/teamNames';
 	import { LocateFixed } from '@lucide/svelte';
 	import { language } from '$lib/language.svelte';
 	import { stageName as knockoutStageName } from '$lib/stageLabels';
@@ -139,12 +139,17 @@
 	}
 
 	function initials(name: string) {
-		return name
-			.split(/\s+/)
-			.filter(Boolean)
+		const parts = name.split(/\s+/).filter(Boolean);
+		if (parts.length <= 1) return [...name].slice(0, 2).join('').toUpperCase();
+		return parts
 			.slice(0, 2)
 			.map((part) => part[0]?.toUpperCase() ?? '')
 			.join('');
+	}
+
+	function gbTeamName(player: { teamId: string; teamName: string }) {
+		const team = fs.team(player.teamId);
+		return teamNameFromFifaCode(team?.fifaCode, player.teamName);
 	}
 
 	function updatedAt(iso?: string) {
@@ -280,8 +285,8 @@
 						<td>
 							<span class="gb-team">
 								<Flag iso2={fs.team(player.teamId)?.iso2 ?? ''} code={fs.team(player.teamId)?.fifaCode ?? ''} />
-								<span class="tm-full">{player.teamName}</span>
-								<span class="tm-short">{fs.team(player.teamId)?.fifaCode ?? player.teamName}</span>
+								<span class="tm-full">{gbTeamName(player)}</span>
+								<span class="tm-short">{gbTeamName(player)}</span>
 							</span>
 						</td>
 						<td class="num digits">{player.goals}</td>
