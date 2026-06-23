@@ -230,33 +230,6 @@ func Register(app core.App, se *core.ServeEvent) {
 		return e.JSON(200, map[string]string{"status": "ok", "source": source})
 	}).Bind(apis.RequireSuperuserAuth())
 
-	// Manual result override (superuser). Body: ftHome,ftAway,etHome,etAway,
-	// penHome,penAway (ints, et/pen optional) and status.
-	se.Router.POST("/api/admin/matches/{id}/result", func(e *core.RequestEvent) error {
-		id := e.Request.PathValue("id")
-		rec, err := app.FindRecordById("matches", id)
-		if err != nil {
-			return e.JSON(404, map[string]string{"error": "match not found"})
-		}
-		var body struct {
-			FTHome, FTAway   *int
-			ETHome, ETAway   *int
-			PenHome, PenAway *int
-			Status           string
-		}
-		if err := e.BindBody(&body); err != nil {
-			return e.JSON(400, map[string]string{"error": err.Error()})
-		}
-		applyResult(rec, body.Status, body.FTHome, body.FTAway, body.ETHome, body.ETAway, body.PenHome, body.PenAway)
-		if err := app.Save(rec); err != nil {
-			return e.JSON(500, map[string]string{"error": err.Error()})
-		}
-		if err := ResolveBracket(app); err != nil {
-			log.Printf("[sync] resolve after manual override: %v", err)
-		}
-		return e.JSON(200, map[string]any{"status": "ok", "id": rec.Id})
-	}).Bind(apis.RequireSuperuserAuth())
-
 	se.Router.GET("/api/live/events", func(e *core.RequestEvent) error {
 		liveMatches, err := app.FindRecordsByFilter("matches", liveStatusFilter, "kickoff", 0, 0)
 		if err != nil {

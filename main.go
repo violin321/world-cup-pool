@@ -16,6 +16,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/hook"
 
 	"github.com/oyvhov/world-cup-pool/internal/account"
+	"github.com/oyvhov/world-cup-pool/internal/admin"
 	"github.com/oyvhov/world-cup-pool/internal/chat"
 	"github.com/oyvhov/world-cup-pool/internal/dev"
 	"github.com/oyvhov/world-cup-pool/internal/forecast"
@@ -78,6 +79,7 @@ func main() {
 		}
 
 		account.Register(e.App, e)
+		admin.Register(e.App, e)
 		account.RegisterStats(e.App, e)
 		account.RegisterPublicStats(e.App, e)
 		oauth.Register(e.App)

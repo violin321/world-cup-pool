@@ -88,6 +88,7 @@
 	let isPublic = $derived(
 		(path === '/' && !auth.isAuthed) ||
 		path === '/info' ||
+		path === '/admin' ||
 		path.startsWith('/join') ||
 			path.startsWith('/confirm-password-reset/')
 	);

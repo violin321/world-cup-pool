@@ -5,7 +5,6 @@ import (
 	"log"
 	"sync/atomic"
 
-	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -139,11 +138,4 @@ func Register(app core.App, se *core.ServeEvent) {
 		}
 		return e.Next()
 	})
-
-	se.Router.POST("/api/admin/recompute", func(e *core.RequestEvent) error {
-		if err := Recompute(app); err != nil {
-			return e.JSON(500, map[string]string{"error": err.Error()})
-		}
-		return e.JSON(200, map[string]string{"status": "ok"})
-	}).Bind(apis.RequireSuperuserAuth())
 }
