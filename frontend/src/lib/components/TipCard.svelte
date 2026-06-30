@@ -7,9 +7,11 @@
 		teamsResolved,
 		type Match,
 		type FriendTip,
-		type LiveEvent
+		type LiveEvent,
+		type MatchScoresDetail,
+		type MatchStatsSide
 	} from '$lib/tips.svelte';
-	import { decisiveEvents, eventIcon, eventMinute, eventTeam, eventTitle } from '$lib/liveEvents';
+	import { decisiveEvents, eventIcon, eventMinute, eventTeam, eventTitle, isGoal } from '$lib/liveEvents';
 	import { vibrate } from '$lib/haptics';
 	import { friendTipsLeague } from '$lib/friendTipsLeague.svelte';
 	import Flag from './Flag.svelte';
@@ -48,18 +50,57 @@
 	// Goals + red cards summary. Live matches stream through the realtime store;
 	// finished matches are fetched once on demand from the persisted events.
 	let fetchedEvents = $state<LiveEvent[]>([]);
+	let scoresDetail = $state<MatchScoresDetail | null>(null);
 	let eventsLoaded = $state(false);
 	let summaryEvents = $derived(
-		decisiveEvents(live ? (tipsStore.liveEvents[match.id] ?? []) : fetchedEvents)
+		decisiveEvents(live ? (tipsStore.liveEvents[match.id] ?? fetchedEvents) : fetchedEvents)
 	);
+	let allEvents = $derived(live ? (tipsStore.liveEvents[match.id] ?? fetchedEvents) : fetchedEvents);
+	let goalsOnly = $derived(summaryEvents.filter(isGoal));
+	let hasScoresDetail = $derived(!!scoresDetail && !scoresDetail.error);
+	let statsHome = $derived(scoresDetail?.stats?.home ?? null);
+	let statsAway = $derived(scoresDetail?.stats?.away ?? null);
+	let hasStats = $derived(!!statsHome || !!statsAway);
+	let hasFullFeed = $derived(allEvents.length > 0 && hasScoresDetail);
 	let goalSummaryOnly = $derived(
 		summaryEvents.length > 0 && summaryEvents.every((event) => event.providerKey.startsWith('ofgoal:'))
 	);
 
 	async function ensureMatchEvents() {
-		if (eventsLoaded || !played) return;
+		if (eventsLoaded || (!played && !live)) return;
 		eventsLoaded = true;
-		fetchedEvents = await tipsStore.loadMatchEvents(match.id);
+		scoresDetail = await tipsStore.loadMatchScoresDetail(match.id);
+		fetchedEvents = scoresDetail?.events.length ? scoresDetail.events : await tipsStore.loadMatchEvents(match.id);
+	}
+
+	function statValue(stats: MatchStatsSide | null, key: keyof MatchStatsSide): string {
+		const value = stats?.[key];
+		return value === undefined || value === null || value === '' ? '—' : String(value);
+	}
+
+	function statRows(): { label: string; key: keyof MatchStatsSide }[] {
+		if (language.isChinese) {
+			return [
+				{ label: '射门', key: 'shots' },
+				{ label: '射正', key: 'shotsOnTarget' },
+				{ label: '控球率', key: 'possession' },
+				{ label: '角球', key: 'corners' },
+				{ label: '扑救', key: 'saves' },
+				{ label: '犯规', key: 'fouls' },
+				{ label: '传球', key: 'passes' },
+				{ label: '传球准确率', key: 'passAccuracy' }
+			];
+		}
+		return [
+			{ label: language.text('Skudd', 'Skot', 'Shots'), key: 'shots' },
+			{ label: language.text('På mål', 'På mål', 'On target'), key: 'shotsOnTarget' },
+			{ label: language.text('Ballbesittelse', 'Ballinnehav', 'Possession'), key: 'possession' },
+			{ label: language.text('Cornere', 'Cornere', 'Corners'), key: 'corners' },
+			{ label: language.text('Redninger', 'Redningar', 'Saves'), key: 'saves' },
+			{ label: language.text('Frispark mot', 'Frispark mot', 'Fouls'), key: 'fouls' },
+			{ label: language.text('Pasninger', 'Pasningar', 'Passes'), key: 'passes' },
+			{ label: language.text('Pasningspresisjon', 'Pasningspresisjon', 'Pass accuracy'), key: 'passAccuracy' }
+		];
 	}
 
 	// Editable working copy.
@@ -372,6 +413,9 @@
 	{#if bodyVisible}
 		<div class="body">
 			{#if (played || live) && summaryEvents.length > 0}
+				{#if goalsOnly.length > 0}
+					<div class="event-section-title">{language.isChinese ? '进球摘要' : language.text('Målsammendrag', 'Målsamandrag', 'Goal summary')}</div>
+				{/if}
 				<div
 					class="match-events"
 					aria-label={language.text('Kamphendelser', 'Kamphendingar', 'Match events')}
@@ -399,6 +443,32 @@
 				{#if goalSummaryOnly}
 					<p class="muted small event-note">{language.isChinese ? '当前仅显示 openfootball 进球摘要；完整事件流（助攻、红黄牌、换人）不可用。' : language.text('Viser bare målsammendrag fra openfootball; komplett hendelsesstrøm (assist, kort, bytter) er ikke tilgjengelig.', 'Viser berre målsamandrag frå openfootball; komplett hendingsstraum (assist, kort, byte) er ikkje tilgjengeleg.', 'Showing openfootball goal summary only; full event feed (assists, cards, substitutions) is unavailable.')}</p>
 				{/if}
+			{/if}
+			{#if hasFullFeed}
+				<details class="event-details">
+					<summary>{language.isChinese ? '完整事件流' : language.text('Komplett hendelsesstrøm', 'Komplett hendingsstraum', 'Full event feed')}</summary>
+					<ol class="full-events">
+						{#each allEvents as event (event.id || event.providerKey)}
+							{@const evTeam = eventTeam(event, [home, away])}
+							<li>
+								<span class="event-time">{eventMinute(event) || '—'}</span>
+								<span class="event-kind">{eventIcon(event)}</span>
+								<span class="event-main">{event.player || event.comments || event.detail || event.type}</span>
+								{#if event.assist}<span class="muted small">{language.text('Assist', 'Assist', 'Assist')}: {event.assist}</span>{/if}
+								{#if evTeam}<span class="event-side"><Flag iso2={evTeam.iso2} code={evTeam.fifaCode} size={14} /> {teamDisplayName(evTeam)}</span>{:else if event.team}<span class="event-side muted small">{event.team}</span>{/if}
+							</li>
+						{/each}
+					</ol>
+				</details>
+			{/if}
+			{#if hasStats}
+				<div class="stats-box" aria-label={language.isChinese ? '技术统计' : language.text('Kampstatistikk', 'Kampstatistikk', 'Match statistics')}>
+					<div class="event-section-title">{language.isChinese ? '技术统计' : language.text('Kampstatistikk', 'Kampstatistikk', 'Match statistics')}</div>
+					<div class="stats-head"><span>{H.name}</span><span>{A.name}</span></div>
+					{#each statRows() as row (row.key)}
+						<div class="stat-row"><b>{statValue(statsHome, row.key)}</b><span>{row.label}</span><b>{statValue(statsAway, row.key)}</b></div>
+					{/each}
+				</div>
 			{/if}
 			{#if isKO && !resolved}
 					<p class="muted">{t.tipCard.loading}</p>
@@ -1107,6 +1177,14 @@
 		gap: 0.4rem;
 		margin: 0 0 0.7rem;
 	}
+	.event-section-title {
+		margin: 0.25rem 0 0.4rem;
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
 	.mev {
 		display: inline-flex;
 		align-items: center;
@@ -1135,5 +1213,93 @@
 		color: var(--muted);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
+	}
+	.event-details,
+	.stats-box {
+		margin: 0.75rem 0 0;
+		padding: 0.7rem 0.8rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+	}
+	.event-details summary {
+		cursor: pointer;
+		font-size: 0.82rem;
+		font-weight: 750;
+		color: var(--text);
+	}
+	.full-events {
+		list-style: none;
+		padding: 0;
+		margin: 0.65rem 0 0;
+		display: grid;
+		gap: 0.42rem;
+	}
+	.full-events li {
+		display: grid;
+		grid-template-columns: 2.4rem 1.6rem minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 0.82rem;
+	}
+	.event-time {
+		font-family: var(--font-mono);
+		color: var(--muted);
+	}
+	.event-kind {
+		text-align: center;
+	}
+	.event-main {
+		font-weight: 650;
+		min-width: 0;
+	}
+	.event-side {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--muted);
+		font-size: 0.76rem;
+	}
+	.stats-head,
+	.stat-row {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		gap: 0.65rem;
+	}
+	.stats-head {
+		margin-bottom: 0.45rem;
+		font-size: 0.75rem;
+		font-weight: 750;
+		color: var(--muted);
+	}
+	.stats-head span:last-child {
+		grid-column: 3;
+		text-align: right;
+	}
+	.stat-row b:last-child {
+		text-align: right;
+	}
+	.stat-row {
+		padding: 0.32rem 0;
+		border-top: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+		font-size: 0.82rem;
+	}
+	.stat-row span {
+		color: var(--muted);
+		font-size: 0.75rem;
+		text-align: center;
+	}
+	.stat-row b {
+		font-family: var(--font-mono);
+		font-weight: 800;
+	}
+	@media (max-width: 520px) {
+		.full-events li {
+			grid-template-columns: 2.2rem 1.35rem minmax(0, 1fr);
+		}
+		.event-side {
+			grid-column: 3;
+		}
 	}
 </style>

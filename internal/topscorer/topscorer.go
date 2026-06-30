@@ -2,6 +2,7 @@ package topscorer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -28,6 +29,8 @@ const (
 	ensureLimit        = 10
 	fallbackSource     = "dongqiudi"
 	openfootballSource = "openfootball"
+	scoresSource       = "scores"
+	defaultScoresAPI   = "https://wc.violinai.qzz.io/scores-api"
 )
 
 // liveStatusFilter matches the matches.status values the provider uses while a
@@ -80,6 +83,86 @@ func rateKey(e *core.RequestEvent, action string) string {
 type apiClient interface {
 	TopScorers(context.Context) ([]football.TopScorer, error)
 	SearchPlayers(context.Context, string) ([]football.PlayerSearchResult, error)
+}
+
+type scoresAPIClient struct {
+	base string
+	http *http.Client
+}
+
+type scoresTopScorerResponse struct {
+	Success bool `json:"success"`
+	Data    []struct {
+		Name    string `json:"name"`
+		Goals   int    `json:"goals"`
+		Country string `json:"country"`
+		Photo   string `json:"photo"`
+	} `json:"data"`
+}
+
+func newScoresAPIClient() *scoresAPIClient {
+	base := strings.TrimRight(os.Getenv("WORLDCUP_SCORES_API_BASE"), "/")
+	if base == "" {
+		base = defaultScoresAPI
+	}
+	return &scoresAPIClient{base: base, http: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func (c *scoresAPIClient) TopScorers(ctx context.Context) ([]football.TopScorer, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/top-scorers", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("scores-api top scorers: status %d", resp.StatusCode)
+	}
+	var body scoresTopScorerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	out := make([]football.TopScorer, 0, len(body.Data))
+	for i, scorer := range body.Data {
+		name := strings.TrimSpace(scorer.Name)
+		team := strings.TrimSpace(scorer.Country)
+		if name == "" || team == "" || scorer.Goals <= 0 {
+			continue
+		}
+		out = append(out, football.TopScorer{
+			Name:     name,
+			PhotoURL: scoresAbsoluteURL(c.base, scorer.Photo),
+			TeamName: team,
+			Goals:    scorer.Goals,
+			Rank:     i + 1,
+		})
+	}
+	return out, nil
+}
+
+func (c *scoresAPIClient) SearchPlayers(context.Context, string) ([]football.PlayerSearchResult, error) {
+	return []football.PlayerSearchResult{}, nil
+}
+
+func scoresAbsoluteURL(base, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return raw
+	}
+	if !strings.HasPrefix(raw, "/") {
+		raw = "/" + raw
+	}
+	origin := strings.TrimSuffix(strings.TrimSuffix(base, "/api"), "/scores-api")
+	if strings.HasPrefix(raw, "/scores-assets/") {
+		return origin + raw
+	}
+	if strings.HasPrefix(raw, "/photos/") {
+		return origin + "/scores-assets" + raw
+	}
+	return origin + "/scores" + raw
 }
 
 type Player struct {
@@ -271,7 +354,11 @@ func Register(app core.App, serveEvent *core.ServeEvent) {
 
 	key := os.Getenv("API_FOOTBALL_KEY")
 	var client apiClient
-	if key != "" {
+	if os.Getenv("WORLDCUP_SCORES_API_DISABLED") != "true" {
+		client = newScoresAPIClient()
+		startSmartSync(app, client)
+		log.Printf("[topscorer] scores-api sync enabled (active %v / idle %v)", activeSyncEvery, idleSyncEvery)
+	} else if key != "" {
 		client = football.New(key)
 		startSmartSync(app, client)
 		log.Printf("[topscorer] auto-sync enabled (active %v / idle %v)", activeSyncEvery, idleSyncEvery)
@@ -429,16 +516,22 @@ func Sync(ctx context.Context, app core.App, client apiClient) error {
 func fetchTopScorers(ctx context.Context, client apiClient) ([]football.TopScorer, string, error) {
 	if client != nil {
 		scorers, err := client.TopScorers(ctx)
-		if _, ok := client.(*dongqiudiTopScorerSource); ok {
+		if _, ok := client.(*scoresAPIClient); ok {
+			if err == nil && len(scorers) > 0 {
+				return scorers, scoresSource, nil
+			}
+			if err != nil {
+				log.Printf("[topscorer] scores-api top scorers unavailable, trying %s fallback: %v", dongqiudiSourceLabel, err)
+			} else {
+				log.Printf("[topscorer] scores-api top scorers empty, trying %s fallback", dongqiudiSourceLabel)
+			}
+		} else if _, ok := client.(*dongqiudiTopScorerSource); ok {
 			return scorers, fallbackSource, err
-		}
-		if _, ok := client.(*openfootballTopScorerSource); ok {
+		} else if _, ok := client.(*openfootballTopScorerSource); ok {
 			return scorers, openfootballSource, err
-		}
-		if err == nil && len(scorers) > 0 {
+		} else if err == nil && len(scorers) > 0 {
 			return scorers, "api-football", nil
-		}
-		if err != nil {
+		} else if err != nil {
 			log.Printf("[topscorer] API-Football top scorers unavailable, trying %s fallback: %v", dongqiudiSourceLabel, err)
 		} else {
 			log.Printf("[topscorer] API-Football top scorers empty, trying %s fallback", dongqiudiSourceLabel)
@@ -532,9 +625,9 @@ func syncScorers(app core.App, scorers []football.TopScorer, source string) erro
 }
 
 func clearStaleDynamicStandings(app core.App, activeSource string) {
-	prefixes := []string{"dqd:", "of:"}
+	prefixes := []string{"dqd:", "of:", "scores:"}
 	for _, prefix := range prefixes {
-		if (activeSource == fallbackSource && prefix == "dqd:") || (activeSource == openfootballSource && prefix == "of:") {
+		if (activeSource == fallbackSource && prefix == "dqd:") || (activeSource == openfootballSource && prefix == "of:") || (activeSource == scoresSource && prefix == "scores:") {
 			continue
 		}
 		records, err := app.FindRecordsByFilter(collectionName, "providerKey ~ {:key} && goals > 0", "", 0, 0, map[string]any{"key": prefix})
@@ -1129,6 +1222,9 @@ func scorerProviderKey(scorer football.TopScorer, source string) string {
 	if source == fallbackSource {
 		return "dqd:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
 	}
+	if source == scoresSource {
+		return "scores:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
+	}
 	if source == openfootballSource || scorer.ProviderID <= 0 {
 		return "of:" + canonPlayer(scorer.Name) + ":" + canonTeam(scorer.TeamName)
 	}
@@ -1154,6 +1250,9 @@ func sourceFromProviderKey(providerKey string) string {
 	if strings.HasPrefix(providerKey, "of:") {
 		return openfootballSource
 	}
+	if strings.HasPrefix(providerKey, "scores:") {
+		return scoresSource
+	}
 	if strings.HasPrefix(providerKey, "api:") {
 		return "api-football"
 	}
@@ -1166,6 +1265,8 @@ func sourceLabel(source string) string {
 		return dongqiudiSourceLabel
 	case openfootballSource:
 		return openfootballSourceLabel
+	case scoresSource:
+		return "scores-api"
 	case "api-football":
 		return "API-Football"
 	default:

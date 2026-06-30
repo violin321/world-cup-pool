@@ -70,6 +70,35 @@ export interface LiveEvent {
 	comments: string;
 }
 
+export interface MatchStatsSide {
+	shots?: number;
+	shotsOnTarget?: number;
+	possession?: string;
+	corners?: number;
+	saves?: number;
+	fouls?: number;
+	offsides?: number;
+	passes?: number;
+	passAccuracy?: string;
+	crossAccuracy?: string;
+	[key: string]: unknown;
+}
+
+export interface MatchScoresDetail {
+	matchId: string;
+	scoresMatchId: string;
+	matchedBy: string;
+	source: string;
+	dataSource: string;
+	status: string;
+	period: string;
+	score: { home: number; away: number };
+	goals: LiveEvent[];
+	events: LiveEvent[];
+	stats: { home?: MatchStatsSide; away?: MatchStatsSide };
+	error?: string;
+}
+
 export interface FriendTip {
 	userId: string;
 	name: string;
@@ -402,19 +431,53 @@ class TipsStore {
 	async loadMatchEvents(matchId: string): Promise<LiveEvent[]> {
 		if (!matchId) return [];
 		try {
-			const r = await pb.send(`/api/matches/${encodeURIComponent(matchId)}/events`, {
+			const r = await this.loadMatchScoresDetail(matchId).catch(() => null);
+			if (r && Array.isArray(r.events) && r.events.length > 0) return r.events;
+			const fallback = await pb.send(`/api/matches/${encodeURIComponent(matchId)}/events`, {
 				method: 'GET'
 			});
-			const raw = Array.isArray(r.events) ? r.events : [];
-			const events: LiveEvent[] = [];
-			for (const item of raw) {
-				const event = this.toLiveEvent(item as Record<string, unknown>);
-				if (event) events.push(event);
-			}
-			return events.sort(sortLiveEvents);
+			return this.parseEvents(fallback.events).sort(sortLiveEvents);
 		} catch {
 			return [];
 		}
+	}
+
+	async loadMatchScoresDetail(matchId: string): Promise<MatchScoresDetail | null> {
+		if (!matchId) return null;
+		try {
+			const r = await pb.send(`/api/matches/${encodeURIComponent(matchId)}/scores`, {
+				method: 'GET'
+			});
+			return {
+				matchId: stringField(r.matchId),
+				scoresMatchId: stringField(r.scoresMatchId),
+				matchedBy: stringField(r.matchedBy),
+				source: stringField(r.source),
+				dataSource: stringField(r.dataSource),
+				status: stringField(r.status),
+				period: stringField(r.period),
+				score: {
+					home: numberField(r.score?.home),
+					away: numberField(r.score?.away)
+				},
+				goals: this.parseEvents(r.goals),
+				events: this.parseEvents(r.events).sort(sortLiveEvents),
+				stats: typeof r.stats === 'object' && r.stats !== null ? r.stats : {},
+				error: stringField(r.error)
+			};
+		} catch {
+			return null;
+		}
+	}
+
+	private parseEvents(raw: unknown): LiveEvent[] {
+		if (!Array.isArray(raw)) return [];
+		const events: LiveEvent[] = [];
+		for (const item of raw) {
+			const event = this.toLiveEvent(item as Record<string, unknown>);
+			if (event) events.push(event);
+		}
+		return events;
 	}
 
 	private toLiveEvent(record: Record<string, unknown>): LiveEvent | null {
